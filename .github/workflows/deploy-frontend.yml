@@ -1,0 +1,31 @@
+name: Deploy frontend (Cloudflare Pages)
+
+# Builds the SPA and publishes it to Cloudflare Pages via wrangler Direct Upload — no
+# dashboard "Connect to Git" needed. The Pages project name == the repo name (== the slug),
+# and VITE_API_BASE_URL is injected at build time so it never needs the Pages dashboard.
+#
+# Requires two repo secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+# (set automatically by the molde-deploy skill via `gh secret set`).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run build --workspace frontend
+        env:
+          VITE_API_BASE_URL: https://api-${{ github.event.repository.name }}.parolin.net
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name=${{ github.event.repository.name }}

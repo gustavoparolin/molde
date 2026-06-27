@@ -1,0 +1,43 @@
+// Molde skeleton schema — keep `UserAccount` (auth) and replace/extend `Item`
+// with the real domain models for your app. The audit columns (createdBy/updatedBy)
+// are populated automatically by the Prisma extension in repositories/db.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model UserAccount {
+  id              String   @id @default(uuid())
+  googleSubjectId String   @unique
+  email           String   @unique
+  displayName     String
+  avatarUrl       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String?
+  updatedBy       String?
+
+  // Domain relations go here. Example:
+  items Item[]
+}
+
+/// Example domain entity — the reference "vertical slice" (model → repository →
+/// service → route → store → page). Rename/replace it with your real entities.
+model Item {
+  id          String   @id @default(uuid())
+  ownerUserId String
+  title       String
+  body        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  owner UserAccount @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, createdAt])
+}

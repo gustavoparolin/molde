@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+coverage/
+.cache/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Env files (secrets stay local)
+.env
+.env.*
+!.env.example
+.google-oauth-key.json
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+
+# NOTE: `.brief/` is intentionally NOT ignored in the Molde template — it ships the
+# idea.md template + inspiration/.gitkeep so a folder-copy carries them. When you scaffold
+# a real app, `scripts/personalize` APPENDS `.brief/` to that app's .gitignore so your
+# private planning notes never reach the app's GitHub repo.
