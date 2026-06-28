@@ -29,19 +29,40 @@ push main ──┬─► Cloudflare Pages (SPA)  <app>.parolin.net   (React 19 
 ## AI integration (optional)
 
 When the app needs vision/LLM: use the `openai` npm package with provider-agnostic env vars.
-Default provider: Z.AI (`open.bigmodel.cn`) — free vision quota via `glm-4v-flash`. OpenAI-compatible.
+Default provider in `.env.example`: Google Gemini (free tier, 15 RPM, 1500 req/day). OpenAI-compatible.
 
 ```typescript
 import OpenAI from "openai";
 const client = new OpenAI({
   apiKey: process.env.AI_API_KEY,
-  baseURL: process.env.AI_BASE_URL ?? "https://open.bigmodel.cn/api/paas/v4",
+  baseURL: process.env.AI_BASE_URL ?? "https://generativelanguage.googleapis.com/v1beta/openai/",
+  defaultHeaders: process.env.AI_BASE_URL?.includes("ngrok")
+    ? { "ngrok-skip-browser-warning": "true" }
+    : {},
 });
-// model = process.env.AI_MODEL ?? "glm-4v-flash"
+// model = process.env.AI_MODEL ?? "gemini-2.0-flash"
+// max_tokens = Number(process.env.AI_MAX_TOKENS ?? 4096)
 ```
 
-Env vars: `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`. Switch providers by changing only the three env vars.
-Provision with `-EnableAI` flag. Key for Z.AI: `bigmodel.cn` → API Keys.
+Env vars: `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_MAX_TOKENS`, `OCR_TIMEOUT_MS`.
+
+**Confirmed working providers (tested with receipt OCR):**
+- Gemini 2.0 Flash: `https://generativelanguage.googleapis.com/v1beta/openai/` — fast, free tier
+- Ollama local (`qwen3-vl:30b`): `http://localhost:11434/v1` — 29 items extracted from physical receipt
+  - Thinking model: requires `AI_MAX_TOKENS=16384` (4096 consumed by reasoning, no room for output)
+  - Via ngrok: `AI_BASE_URL=https://<tunnel>.ngrok-free.dev/v1` + `ngrok-skip-browser-warning` header
+
+**Sharp image pipeline bug (CRITICAL if using sharp):**
+Never call `.metadata()` on the same Sharp instance used for pipeline output — it invalidates the lazy state silently.
+```typescript
+// CORRECT:
+const meta = await sharp(buf).metadata();       // separate instance, read-only
+let pipeline = sharp(buf).rotate();             // fresh pipeline
+if (needsResize) pipeline = pipeline.resize(…);
+const buffer = await pipeline.jpeg({ quality: 92 }).toBuffer();
+```
+
+Provision with `-EnableAI` flag.
 
 ## Auth flow (Google OAuth + JWT)
 
