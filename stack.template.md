@@ -17,24 +17,42 @@ Fill each `<…>` placeholder with your own values.
 
 | Layer | Where | Notes |
 |---|---|---|
-| Frontend | `<static host>` (e.g. Cloudflare Pages) | SPA fallback `/*  /index.html  200` |
-| Backend  | `<container host>` (e.g. Coolify on a VPS) | Base directory `/backend`, Nixpacks, Node 22 |
-| Database | `<managed/self-hosted Postgres>` | migrations run on boot (`prisma migrate deploy`) |
-| Storage  | `<S3-compatible>` (e.g. Cloudflare R2) | only if the app uploads files |
-| Auth     | Google OAuth + signed JWT | shared OAuth client across `*.<your-zone>` |
+| Frontend | Cloudflare Pages | SPA fallback `/*  /index.html  200`; deploy via `wrangler pages deploy` in CI |
+| Backend  | Coolify on VPS | Base dir `/backend`, Nixpacks, Node 22, port 3000 |
+| Database | Postgres (Coolify-managed) | Migrations run on boot (`prisma migrate deploy`) |
+| Storage  | Cloudflare R2 (opt-in) | Only if the app uploads files; provision with `-EnableR2` |
+| Auth     | Google OAuth + signed JWT | Shared OAuth client across `*.<your-zone>`; add one redirect URI per app |
+| AI       | Z.AI / OpenAI-compatible (opt-in) | `openai` package with `AI_API_KEY / AI_BASE_URL / AI_MODEL`; provision with `-EnableAI` |
 
 ## Environment variables
 
-See `.env.example` for the full list. Production values are set in the host panels
-(`<container host>` for the backend, `<static host>` build env for `VITE_API_BASE_URL`).
+See `.env.example` for the full list. Production values are set in Coolify (backend) and
+Cloudflare Pages build environment (`VITE_API_BASE_URL`).
 
 ## Provisioning automation
 
-The agent provisions infra via API using credentials in `~/.config/molde/provision.env`:
-`<DNS/Pages provider API>` + `<container host API>`. The only residual manual step per app is adding
-the new redirect URI to the shared OAuth client (~30s).
+Agent provisions infra via API using `~/.config/molde/provision.env`. Required keys:
+
+```
+CLOUDFLARE_API_TOKEN        CLOUDFLARE_ACCOUNT_ID      CLOUDFLARE_ZONE_ID
+COOLIFY_HOST                COOLIFY_API_URL             COOLIFY_TOKEN
+CF_ACCESS_CLIENT_ID         CF_ACCESS_CLIENT_SECRET     # Zero Trust service token for Coolify
+COOLIFY_SERVER_UUID         COOLIFY_PROJECT_UUID
+GOOGLE_CLIENT_ID            GOOGLE_CLIENT_SECRET
+GITHUB_USER                 # GitHub username (falls back to `gh api user`)
+R2_ACCESS_KEY_ID            R2_SECRET_ACCESS_KEY        # only if -EnableR2
+AI_API_KEY                  AI_BASE_URL                 AI_MODEL   # only if -EnableAI
+```
+
+Run: `pwsh scripts/provision.ps1 [-EnableR2] [-EnableAI] -Execute`
+
+The only residual manual step per app is adding the new redirect URI to the shared OAuth client (~30s).
 
 ## Known gotchas
 
-Record here the deploy traps you hit so future runs skip them (auth callback mismatches, build-time env
-vars, CORS origins, webhook URLs, …). See `.specify/memory/molde-brain.md` for the reference list.
+Record here the deploy traps you hit so future runs skip them.
+See `.specify/memory/molde-brain.md` for the reference list (13 gotchas documented).
+
+Key ones: Coolify needs CF-Access headers if behind Zero Trust; Cloudflare Pages subdomain may have a
+suffix (`myapp-2k8.pages.dev`) — read it from the API, don't assume `<slug>.pages.dev`; CNAME must
+exist before adding the custom domain to Pages; Oracle Security List must allow inbound TCP 80/443.
