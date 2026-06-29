@@ -1,12 +1,5 @@
 # Ideia do app — preencha aqui
 
-> **Para a IA (Claude Code / Copilot):** tudo nesta pasta `.brief/` é **contexto** para desenhar o app.
-> Leia as telas em `inspiration/` (são imagens — abra e observe layout, densidade, tom), o `stack.md`
-> (infra) e o `notes.md`. Depois use estes campos como entrada do `/speckit.specify`. Se algo estiver
-> vago, **me entreviste** e atualize este arquivo antes de especificar.
-
----
-
 ## Infra (a skill lê isto; não vai para o spec)
 
 - **slug:** _(deixe em branco — é inferido do nome da pasta; ex.: `celula3`)_
