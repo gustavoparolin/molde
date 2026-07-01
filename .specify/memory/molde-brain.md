@@ -26,6 +26,27 @@ push main ──┬─► Cloudflare Pages (SPA)  <app>.parolin.net   (React 19 
 `services/itemService.ts` (+ domain events) → `api/routes/items.ts` (zod + requireAuth) → registered in
 `api/server.ts`. Frontend: `store/itemsStore.ts` → `pages/ItemsPage.tsx` via `services/apiClient.ts`.
 
+## Multi-step / stateful pages must reflect position in the URL
+
+Any page with an internal "which step/item am I on" pointer (wizards, checkout flows, a workout
+session moving between exercises, a document editor's current page) needs that pointer to live in
+the URL — path param for the resource id, query string for the sub-position — not only in a
+frontend store (Zustand, `useState`, etc.). A plain reload wipes in-memory store state; if the
+route can't rehydrate from the URL alone, the user gets bounced back to step 1 and it reads as data
+loss even when nothing was actually lost server-side.
+
+Pattern: `/feature/:resourceId?step=<n>` — on mount, if the store doesn't already hold that
+resource, fetch it and restore `step` from the query string in the *same* state update that loads
+the resource (not a separate follow-up call). Restoring in two steps races with whatever effect
+keeps the URL in sync with the in-memory position — React StrictMode double-invokes effects in
+dev, so two concurrent "restore" calls can land their state updates in unpredictable order and the
+URL ends up one step behind. Do the fetch-and-restore as one atomic store update instead
+(`loadThing(id, { stepIndex })` setting both fields in a single `set()` call), and guard the
+restore effect itself with a ref (not just a dependency array) so StrictMode's double-invoke is a
+genuine no-op on the second pass rather than firing the fetch twice.
+
+Reference implementation: Parafit's `ActiveSessionPage`/`sessionStore.loadSession` (`/treino/sessao/:sessionId?ex=<index>`).
+
 ## AI integration (optional)
 
 When the app needs vision/LLM: use the `openai` npm package with provider-agnostic env vars.

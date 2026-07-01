@@ -365,3 +365,72 @@ Três mudanças estruturais foram aplicadas ao template Molde (2026-06-30):
    CLI: `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z`.
    Atualização: `specify self upgrade`. O Molde mantém uma customização (dashes vs dots em nomes
    de skill, convenções Parolin Stack). Ao atualizar spec-kit upstream, reconciliar manualmente.
+
+---
+
+## [2026-07-01] parafit — infra: NIXPACKS_NODE_VERSION do template (22) contradiz o engines.node (>=24) do próprio template
+**Severity:** CRITICAL
+**Status:** `noted`
+
+`scripts/provision.ps1`/`provision.sh` do Molde setam `NIXPACKS_NODE_VERSION=22` como env var no
+Coolify na hora de provisionar o backend — mas `backend/package.json` do PRÓPRIO template já declara
+`"engines": { "node": ">=24.0" }` (desde a migração pra Prisma 7). Resultado: todo deploy do backend
+falha no build (`npm install && prisma generate`) com
+`Cannot find module '.../@prisma/client/runtime/query_engine_bg.postgresql.wasm-base64.js'`,
+porque o `prisma generate` roda sob Node 22 mas gera artefatos incompatíveis com o Node que o
+schema realmente espera. Isso ficou não-detectado no Parafit por dias — o backend parecia
+"travado sem CD" quando na real todo deploy (manual ou automático) vinha falhando silenciosamente
+nesse passo.
+
+**Fix aplicado no Parafit** (`scripts/provision.ps1`/`.sh`): `NIXPACKS_NODE_VERSION` → `"24"`.
+O template Molde (`C:/Users/gusta/OneDrive/web/molde/scripts/provision.ps1`/`.sh`) ainda está com
+`"22"` — não alterado aqui de propósito (edição em repo compartilhado sem pedido explícito).
+
+**Template impact:** bump `NIXPACKS_NODE_VERSION` pra `"24"` (ou remover a env var e deixar o
+Nixpacks ler `engines.node` do `package.json` direto — mais robusto a futuras mudanças de versão)
+nos dois scripts de provisionamento. Vale também checar se apps Molde mais antigos que o commit
+`deploy-backend.yml` (nota acima, 2026-06-30) têm esse mesmo mismatch — o CD automático também
+falharia silenciosamente pelo mesmo motivo.
+
+---
+
+## [2026-07-01] parafit — pattern: páginas multi-step precisam guardar a posição na URL, não só no store
+**Severity:** HIGH
+**Status:** `promoted`
+
+Usuário reportou "se eu dou refresh no meio de um exercício, volta pra primeira página" no
+`ActiveSessionPage` (fluxo de treino ativo, navegação entre exercícios). Causa raiz: a rota era
+`/treino/sessao` (sem id nenhum) e a posição (`currentExerciseIndex`) só existia no Zustand
+`sessionStore`, em memória. Um refresh reseta o JS runtime inteiro — o store volta ao estado
+inicial — e como a rota não carregava nada a partir da URL, o `useEffect` de guarda simplesmente
+redirecionava de volta pro seletor de planos. Nenhum dado foi perdido de verdade (a sessão e os
+sets já logados continuavam intactos no backend); o bug era puramente de UI não saber onde estava.
+
+**Fix:** rota virou `/treino/sessao/:sessionId?ex=<index>`. No mount, se o store não tem a sessão
+(refresh, deep link, aba nova), busca via `GET /sessions/:id` e restaura a posição a partir do
+`?ex=`; a cada mudança de exercício (next/prev/swipe/superset auto-advance/tap na timeline),
+sincroniza `?ex=` de volta pra URL via `setSearchParams(..., {replace:true})`. Também: a página
+`/treino` (home do fluxo, antes de entrar numa sessão) passou a checar
+`GET /sessions?status=active|paused` quando o store está vazio, pra resumir uma sessão em
+andamento mesmo entrando fresco (não só dando refresh na própria página de sessão).
+
+**Gotcha real (perdeu ~40min até isolar):** a primeira versão do fix restaurava em DOIS passos —
+`loadSession(id)` (que já seta `currentExerciseIndex: 0` internamente) seguido de um
+`goToExercise(indexDaUrl)` como follow-up. Isso corre contra o próprio `useEffect` que sincroniza
+`currentExerciseIndex → URL`: cada `set()` do Zustand dispara notify síncrono (via
+`useSyncExternalStore`), então as DUAS chamadas de `set()` (uma dentro de `loadSession`, outra do
+`goToExercise` alguns microtasks depois) geram passes de render/efeito SEPARADOS — e o React
+StrictMode (dev) ainda dobra a invocação do efeito de restauração, disparando dois `loadSession`
+concorrentes cujas atualizações de estado chegam em ordem imprevisível. Resultado: a URL ficava
+"?ex=0" mesmo depois de restaurar pra "?ex=1", porque o efeito de sync via um snapshot de
+`searchParams` já desatualizado no meio da corrida. **Só sumiu de verdade depois de**: (1) tornar a
+restauração atômica — `loadSession(id, { exerciseIndex })` seta sessão E índice num único `set()`,
+nunca deixando o store passar por um estado intermediário "índice 0" observável — e (2) guardar o
+efeito de restauração com um `useRef` (não só o array de deps), pra que a segunda invocação do
+StrictMode seja um no-op de verdade em vez de disparar o fetch de novo.
+
+**Template impact:** adicionada uma seção nova ("Multi-step / stateful pages must reflect position
+in the URL") no `molde-brain.md`, logo após "The reference slice", com o padrão genérico
+(`/feature/:resourceId?step=<n>`, restauração atômica, guarda por ref contra StrictMode) — não é
+código específico do Parafit, é um princípio de arquitetura de frontend que vale pra qualquer app
+Molde com fluxo em etapas (wizard, checkout, carrossel de itens, editor paginado).
