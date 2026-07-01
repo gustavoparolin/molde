@@ -43,9 +43,8 @@ $githubUser  = if ($cfg["GITHUB_USER"]) { $cfg["GITHUB_USER"] } else { (gh api u
 $r2Key    = if ($EnableR2) { Req "R2_ACCESS_KEY_ID" } else { $null }
 $r2Secret = if ($EnableR2) { Req "R2_SECRET_ACCESS_KEY" } else { $null }
 
-$appHost = "$Slug.$($cfZone -replace '^.*?zone_id.*?(\S+\.\S+)$','$1')"  # fallback: use Slug.parolin.net pattern
-$appHost = "$Slug.parolin.net"   # override: set your own zone pattern here or read from provision.env
-$apiHost = "api-$Slug.parolin.net"
+$appHost = "$Slug.parolin.net"
+$apiHost = "$Slug-api.parolin.net"
 
 Write-Host ("=== Provision '{0}'  ({1}) ===" -f $Slug, ($(if ($dry) {"DRY-RUN"} else {"EXECUTE"}))) -ForegroundColor Cyan
 
@@ -68,7 +67,7 @@ $coolHdr = @{
 # ── 1) Cloudflare DNS: api-<slug> → Coolify host ─────────────────────────────
 # Use A record when target is an IP, CNAME otherwise
 $dnsType = if ($cfTarget -match '^\d{1,3}(\.\d{1,3}){3}$') { "A" } else { "CNAME" }
-Call "Cloudflare DNS ($dnsType api-$Slug)" "POST" "https://api.cloudflare.com/client/v4/zones/$cfZone/dns_records" $cfHdr `
+Call "Cloudflare DNS ($dnsType $apiHost)" "POST" "https://api.cloudflare.com/client/v4/zones/$cfZone/dns_records" $cfHdr `
   @{ type = $dnsType; name = $apiHost; content = $cfTarget; proxied = $true }
 
 # ── 2) Cloudflare Pages project + DNS CNAME + custom domain ─────────────────
@@ -90,8 +89,13 @@ if ($EnableR2) {
 }
 
 # ── 4) Coolify Postgres ──────────────────────────────────────────────────────
-$pg = Call "Coolify Postgres ($Slug)" "POST" "$coolUrl/api/v1/databases/postgresql" $coolHdr `
-  @{ server_uuid = $coolSrv; project_uuid = $coolProj; environment_name = "production"; name = $Slug }
+# Naming convention: db=$Slug-db  user=$Slug-user  password=generated
+$dbName   = "$Slug-db"
+$dbUser   = "$Slug-user"
+$dbPass   = (node -e "console.log(require('crypto').randomBytes(24).toString('hex'))").Trim()
+$pg = Call "Coolify Postgres ($dbName)" "POST" "$coolUrl/api/v1/databases/postgresql" $coolHdr `
+  @{ server_uuid = $coolSrv; project_uuid = $coolProj; environment_name = "production"; name = "$Slug-db";
+     postgres_db = $dbName; postgres_user = $dbUser; postgres_password = $dbPass }
 $databaseUrl = if ($dry) { "<connection-string-from-coolify>" } else { $pg.internal_db_url }
 
 # ── 5) Coolify Application (deploy key — fully autonomous, no GitHub App grants) ─
@@ -99,7 +103,7 @@ $databaseUrl = if ($dry) { "<connection-string-from-coolify>" } else { $pg.inter
 $keyFile = Join-Path $env:TEMP "$Slug-deploy"
 $keyUuid = $null
 if (-not $dry) {
-  ssh-keygen -t ed25519 -C "coolify-deploy-$Slug" -f $keyFile -N '""' -q
+  ssh-keygen -t ed25519 -C "coolify-deploy-$Slug" -f $keyFile -N '' -q
   $pubKey  = Get-Content "$keyFile.pub"
   $privKey = Get-Content $keyFile -Raw
   gh api repos/$githubUser/$Slug/keys --method POST -f title="coolify-deploy" -f key=$pubKey -f read_only=true | Out-Null
@@ -169,7 +173,20 @@ if (-not $dry) {
   Write-Host "→ App build config patched (port + install/start overrides)" -ForegroundColor Yellow
 }
 
-# ── 8) Deploy ────────────────────────────────────────────────────────────────
+# ── 8) GitHub secrets for backend auto-deploy (deploy-backend.yml) ───────────
+# These let the CI workflow trigger Coolify redeployments autonomously on push.
+if (-not $dry) {
+  gh secret set COOLIFY_APP_UUID       --body $appUuid          --repo "$githubUser/$Slug" | Out-Null
+  gh secret set COOLIFY_API_TOKEN      --body $coolToken        --repo "$githubUser/$Slug" | Out-Null
+  gh secret set COOLIFY_API_URL        --body $coolUrl          --repo "$githubUser/$Slug" | Out-Null
+  gh secret set CF_ACCESS_CLIENT_ID    --body $cfAccessId       --repo "$githubUser/$Slug" | Out-Null
+  gh secret set CF_ACCESS_CLIENT_SECRET --body $cfAccessSec     --repo "$githubUser/$Slug" | Out-Null
+  Write-Host "→ GitHub secrets set for backend auto-deploy" -ForegroundColor Yellow
+} else {
+  Write-Host "→ [dry] Would set COOLIFY_APP_UUID, COOLIFY_API_TOKEN, COOLIFY_API_URL, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET on $githubUser/$Slug" -ForegroundColor DarkGray
+}
+
+# ── 9) Initial deploy ─────────────────────────────────────────────────────────
 Call "Coolify deploy" "GET" "$coolUrl/api/v1/deploy?uuid=$appUuid&force=true" $coolHdr $null
 
 Write-Host "`n=== Done ($(if ($dry) {'dry-run'} else {'executed'})) ===" -ForegroundColor Green

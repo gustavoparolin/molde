@@ -23,7 +23,7 @@ jobs:
       - run: npm install
       - run: npm run build --workspace frontend
         env:
-          VITE_API_BASE_URL: https://api-${{ github.event.repository.name }}.parolin.net
+          VITE_API_BASE_URL: https://${{ github.event.repository.name }}-api.parolin.net
       - name: Check Cloudflare secrets
         id: secrets
         env:

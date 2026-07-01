@@ -35,16 +35,16 @@ function Del($label, $url, $headers) {
 Del "Pages project" "https://api.cloudflare.com/client/v4/accounts/$cfAccount/pages/projects/$Slug" $cfHdr
 Del "R2 bucket"     "https://api.cloudflare.com/client/v4/accounts/$cfAccount/r2/buckets/$Slug-assets" $cfHdr
 
-# DNS api-<slug>: look up the record id then delete (dry-run prints the lookup only)
+# DNS <slug>-api: look up the record id then delete (dry-run prints the lookup only)
 if (-not $dry) {
   $zone = $cfg["CLOUDFLARE_ZONE_ID"]
   $rec = Invoke-RestMethod -Headers $cfHdr `
-    -Uri "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?name=api-$Slug.parolin.net"
+    -Uri "https://api.cloudflare.com/client/v4/zones/$zone/dns_records?name=$Slug-api.parolin.net"
   foreach ($r in $rec.result) {
-    Del "DNS api-$Slug ($($r.id))" "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$($r.id)" $cfHdr
+    Del "DNS $Slug-api ($($r.id))" "https://api.cloudflare.com/client/v4/zones/$zone/dns_records/$($r.id)" $cfHdr
   }
 } else {
-  Write-Host "→ (would look up + delete DNS record api-$Slug.parolin.net)" -ForegroundColor Yellow
+  Write-Host "→ (would look up + delete DNS record $Slug-api.parolin.net)" -ForegroundColor Yellow
 }
 
 Write-Host "`nCoolify app/database deletion: confirm the UUIDs in the Coolify UI, then delete via:" -ForegroundColor Magenta

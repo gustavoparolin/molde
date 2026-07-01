@@ -1,0 +1,42 @@
+name: Deploy backend (Coolify)
+
+# Triggers a Coolify redeploy whenever backend code changes land on main.
+# Requires four repo secrets set automatically by provision.ps1:
+#   COOLIFY_APP_UUID, COOLIFY_API_TOKEN, COOLIFY_API_URL,
+#   CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
+# If any secret is missing, the job skips silently (template / pre-provision mode).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        id: check
+        env:
+          APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+        run: |
+          if [ -z "$APP_UUID" ]; then
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "::notice::COOLIFY_APP_UUID not set — skipping backend deploy (template mode)"
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Coolify redeploy
+        if: steps.check.outputs.configured == 'true'
+        run: |
+          curl -sf --fail-with-body \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
+            "${{ secrets.COOLIFY_API_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}&force=false"
+          echo "Coolify redeploy triggered for ${{ github.repository }} @ ${{ github.sha }}"

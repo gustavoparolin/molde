@@ -8,14 +8,25 @@
 
 ## 0. First: orient yourself
 
-1. Read `.specify/memory/molde-brain.md` — full deploy recipe, known gotchas, AI integration patterns.
-2. Read `.specify/memory/constitution.md` — governance rules that override everything else.
-3. Read `.brief/idea.md` — the product intent for *this* app. If it's incomplete, interview the user
+1. **Read `.specify/memory/molde-brain.md`** — deploy recipe (`provision.ps1`), known gotchas,
+   AI integration patterns, AND the **"Parolin infrastructure reference"** (VPS Oracle, Coolify,
+   Cloudflare, R2, Tailscale, DBeaver, container IPs, subdomain pattern). Essential for any
+   infrastructure or storage decisions.
+2. **Read `.specify/memory/parolin-stack.md`** — developer reference: exact stack versions
+   (React 19, Fastify 5, Prisma 7, Node 22), canonical configs (`backend/package.json`,
+   `prisma.config.ts`), auth flow, env var table, deploy recipe, and known code gotchas. Read
+   before scaffolding any new feature or debugging a build failure.
+3. Read `.specify/memory/constitution.md` — governance rules that override everything else.
+4. Read `.brief/idea.md` — the product intent for *this* app. If it's incomplete, interview the user
    and write it back before doing anything.
-4. Scan `.brief/inspiration/` — read the images. The UI should echo their layout, density, and tone.
-5. Read `.brief/stack.md` (if present) — infra overrides (custom domain, R2, AI flags).
+5. Scan `.brief/inspiration/` — read the images. The UI should echo their layout, density, and tone.
+6. Read `.brief/stack.md` (if present) — infra overrides (custom domain, R2, AI flags).
 
-Do not start specifying or coding until you understand the full brief.
+**If this is a brand-new app (freshly copied from the Molde template):** before specifying or coding,
+check for a newer speckit and update it (see §2.4). The template may be months old; the latest
+speckit may have critical fixes or new commands.
+
+Do not start specifying or coding until you understand the full brief and the infra context.
 
 ---
 
@@ -69,16 +80,43 @@ Speckit supports before/after hooks for each command via `.specify/extensions.ym
 hooks at the start and end of each command. Mandatory hooks (`optional: false`) must run and block
 completion. Optional hooks are surfaced but not auto-executed.
 
-### 2.4 Self-update procedure
+### 2.4 Speckit origin and update procedure
 
-To check if a newer speckit is available:
+**Speckit is the open-source SDD framework at `https://github.com/github/spec-kit`.**
+The Molde template ships a customized snapshot of it (Parolin Stack conventions baked in).
 
-1. Compare `.specify/integrations/speckit.manifest.json` → `version` against the latest release.
-2. If the user has the speckit CLI (`npx speckit --version`), run it to check.
-3. Updating replaces files listed in `speckit.manifest.json` → `files` with the new versions.
-4. After update, re-read the new skill files in `.claude/skills/speckit-*/SKILL.md` before proceeding —
-   commands may have changed.
-5. Never update speckit autonomously mid-feature. Propose an update between features.
+**How to install / upgrade the official CLI** (one-time setup per developer machine):
+```bash
+# Requires uv (https://docs.astral.sh/uv/) and Python 3.11+
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@vX.Y.Z
+# Replace vX.Y.Z with the latest tag from https://github.com/github/spec-kit/releases
+
+# Check for newer releases (read-only)
+specify self check
+
+# Upgrade in place
+specify self upgrade
+```
+
+**How Molde integrates speckit:**
+- Molde ships a pre-configured snapshot in `.claude/skills/speckit-*/SKILL.md` (for Claude Code)
+  and `.github/prompts/speckit.*.prompt.md` (for Copilot). These are tracked with checksums in
+  `.specify/integrations/claude.manifest.json` and `.specify/integrations/speckit.manifest.json`.
+- Molde's version uses **dashes** in skill names (`/speckit-specify`) while the official CLI uses
+  **dots** (`/speckit.specify`). The underlying logic is the same.
+- Parolin Stack conventions (vertical slice, Mantine 8, `requireAuth`, Prisma 7, etc.) are baked
+  into Molde's skill files — the official CLI would need re-initialization to get these.
+
+**Update procedure for a Molde-derived app** (run between features, never mid-feature):
+1. Check installed version: `cat .specify/integrations/speckit.manifest.json` → `version`.
+2. Run `specify self check` to see if upstream has a newer version.
+3. If a new version is available, update the **Molde template first**:
+   - In `C:\Users\gusta\OneDrive\web\molde`: `specify self upgrade`
+   - Review what changed (skill files under `.claude/skills/`), reconcile any Parolin Stack
+     customizations that may have been overwritten.
+4. Copy updated skill files from Molde into this project's `.claude/skills/` directory.
+5. Re-read the new skill files before proceeding — commands may have changed.
+6. If `specify` CLI is not installed or offline: proceed with current version and note it.
 
 ---
 
@@ -262,9 +300,11 @@ frontend:
 
 | Document | What it contains |
 |---|---|
-| `.specify/memory/molde-brain.md` | Full deploy recipe, architecture, AI integration, known gotchas |
+| `.specify/memory/molde-brain.md` | Deploy recipe (provision.ps1), architecture, AI integration, infra ops, known gotchas |
+| `.specify/memory/parolin-stack.md` | Dev reference: stack versions, canonical configs, auth flow, env vars, known code gotchas |
 | `.specify/memory/constitution.md` | Governance rules (non-negotiable) |
 | `.specify/integrations/speckit.manifest.json` | Installed speckit version + file checksums |
+| `.specify/integrations/claude.manifest.json` | Installed Claude skill files + checksums |
 | `.specify/init-options.json` | Speckit config (sequential feature numbering, PS scripts) |
 | `.specify/workflows/workflow-registry.json` | Registered workflow: Full SDD Cycle |
 | `specs/` | All feature specs created via `/speckit-specify` |

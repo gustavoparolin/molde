@@ -9,7 +9,7 @@
 ```
 push main ──┬─► Cloudflare Pages (SPA)  <app>.parolin.net   (React 19 + Vite + Mantine)
             │       │ HTTPS, Bearer JWT
-            └─► Coolify (Oracle VPS)     api-<app>.parolin.net
+            └─► Coolify (Oracle VPS)     <app>-api.parolin.net
                     ├─ Fastify 5 (tsx, no build step)
                     └─ PostgreSQL (Prisma 7, migrate deploy on boot)
                          └─ Cloudflare R2 (optional, file uploads)
@@ -66,10 +66,9 @@ Provision with `-EnableAI` flag.
 
 ## Auth flow (Google OAuth + JWT)
 
-`GET /auth/google/login` → `{authorizeUrl}` → Google consent → `GET /auth/google/callback?code=…`
-→ exchange code → `upsertGoogleUser` (find by **googleSubjectId OR email**) → `reply.jwtSign` →
-redirect `https://<app>.parolin.net/auth/callback?token=<jwt>`. Frontend stores it; `apiClient` sends
-Bearer; 401 → auto-logout. DEV mock: `POST /auth/google/mock` (hidden behind `import.meta.env.DEV`).
+See **`parolin-stack.md`** §3.2 for the full flow diagram. Summary:
+`GET /auth/google/login` → Google consent → `GET /auth/google/callback?code=…` → JWT signed →
+redirect to frontend `/auth/callback?token=<jwt>`. Stateless. DEV mock behind `import.meta.env.DEV`.
 A **single shared OAuth client** serves all `*.parolin.net`; per app, add one redirect URI (~30s).
 
 ## Deploy pipeline (by API — the molde-deploy skill)
@@ -82,10 +81,12 @@ Reads `~/.config/molde/provision.env`. Required keys: `CLOUDFLARE_API_TOKEN`, `C
 For slug `<app>`:
 
 1. **GitHub:** `gh repo create <app> --private --source . --remote origin && git push -u origin main`;
-   `gh secret set CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` (for the deploy-frontend workflow).
+   `gh secret set CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` (for `deploy-frontend.yml`).
+   `gh secret set COOLIFY_APP_UUID` / `COOLIFY_API_TOKEN` / `COOLIFY_API_URL` / `CF_ACCESS_CLIENT_ID` /
+   `CF_ACCESS_CLIENT_SECRET` (for `deploy-backend.yml` — auto-set by step 5 below).
 
 2. **Cloudflare (API):**
-   - DNS A/CNAME: `api-<app>` → Coolify host (A if IP, CNAME if hostname).
+   - DNS A/CNAME: `<app>-api` → Coolify host (A if IP, CNAME if hostname).
    - Pages: create project `<app>` → read the **actual** subdomain from the API response (may be
      `<app>-xyz.pages.dev`, not `<app>.pages.dev` — CF assigns a suffix when the slug is taken).
    - DNS CNAME: `<app>.parolin.net` → that subdomain (must exist **before** the next step).
@@ -113,9 +114,146 @@ For slug `<app>`:
 4. **Verify:** `GET https://api-<app>.parolin.net/health` → `{"status":"ok"}`; smoke the real Google login.
 
 5. **Residual manual (🧑 ~30s):** add `https://api-<app>.parolin.net/auth/google/callback` to the shared
-   Google OAuth client's Authorized redirect URIs.
+   Google OAuth client's Authorized redirect URIs. **Exact steps:**
+   - Open the client directly:
+     `https://console.cloud.google.com/auth/clients/111027901822-un9pavjod3l8b18t7mauvp72hq6qol00.apps.googleusercontent.com?project=gen-lang-client-0208522494`
+     (Google Auth Platform → Clients → client **"Parolin Projects"**, project `gen-lang-client-0208522494`,
+     client_id `111027901822-...apps.googleusercontent.com`). This is the same `GOOGLE_CLIENT_ID` in `provision.env`.
+   - Scroll to **"Authorized redirect URIs"** → click **"+ Add URI"**.
+   - Paste `https://api-<app>.parolin.net/auth/google/callback` (e.g. `https://api-parafit.parolin.net/auth/google/callback`).
+   - Click **Save** (bottom) → wait for the **"OAuth client saved"** toast.
+   - Do NOT touch "Authorized JavaScript origins" — the domain is auto-added to authorized domains.
+   - The existing URIs (paramalhar, recibos, localhost:3000…) stay; you're only appending one row.
 
 Always run `provision` in **dry-run first** (prints the intended calls), then `-Execute` for real.
+
+## Parolin infrastructure reference
+
+> **Read this before choosing technologies.** Every Molde app runs on the same shared infra.
+> Understanding the stack prevents redundant decisions and surfaces constraints early.
+
+### Stack overview
+
+| Layer | Technology | Who manages it |
+|---|---|---|
+| Frontend hosting | Cloudflare Pages | Cloudflare (auto-deploy on push) |
+| Backend hosting | Coolify on Oracle VPS | Manual redeploy after push (no CD — see gotcha #14) |
+| Database | PostgreSQL 16 (Docker container, one per app) | Coolify |
+| File / media storage | Cloudflare R2 | Cloudflare (optional per app) |
+| DNS | Cloudflare — zone `parolin.net` | Cloudflare |
+| VPS access | Oracle Cloud Always-Free (Ampere ARM, Oracle Linux) | Oracle |
+| Stable VPS access | Tailscale mesh VPN | Tailscale (account `gumela@gmail.com`) |
+
+### Naming conventions (canonical — applied by provision.ps1)
+
+| Resource | Convention | Example (slug = `parafit`) |
+|---|---|---|
+| Frontend domain | `<slug>.parolin.net` | `parafit.parolin.net` |
+| API domain | `<slug>-api.parolin.net` | `parafit-api.parolin.net` |
+| Postgres DB name | `<slug>-db` | `parafit-db` |
+| Postgres username | `<slug>-user` | `parafit-user` |
+| R2 bucket | `<slug>-assets` | `parafit-assets` |
+| Coolify app name | `<slug>-api` | `parafit-api` |
+| Coolify DB name | `<slug>-db` | `parafit-db` |
+| GitHub repo | `<slug>` | `parafit` |
+
+**Note:** Apps provisioned before 2026-06-30 use the old pattern `api-<slug>.parolin.net` —
+parafit, recibos, trajetorias2, paramalhar. New apps use `<slug>-api.parolin.net`.
+
+### VPS — Oracle Cloud
+
+- **Provider:** Oracle Cloud Always-Free (Ampere ARM), region `sa-saopaulo-1`.
+- **OS:** Oracle Linux / Ubuntu (`ubuntu` user).
+- **Public IP:** `144.22.138.47`.
+- **SSH key:** `~/.ssh/oracle_vps.key` (Ed25519, passphrase-free, stored locally on the dev machine).
+- **SSH config entry** (in `~/.ssh/config`):
+  ```
+  Host oracle-vps paramalhar
+      HostName 144.22.138.47
+      User ubuntu
+      IdentityFile ~/.ssh/oracle_vps.key
+      IdentitiesOnly yes
+  ```
+- **Firewall:** Oracle Cloud Security List (VCN). TCP 80 + 443 must be open to `0.0.0.0/0` for
+  Cloudflare → Traefik/Coolify to work. Port 22 can be restricted to the dev machine's IP, but this
+  breaks whenever the home WAN IP changes — see Tailscale below.
+
+### Tailscale — stable VPS access
+
+Oracle's Security List IP allowlist for SSH breaks whenever the home WAN IP changes (dynamic IP via
+ZTE modem on a residential cable/fiber line). **Tailscale** is the permanent fix: all dev machines
+and the VPS are in the same tailnet, so SSH/DBeaver can use the stable Tailscale IP regardless of
+WAN changes.
+
+- **Account:** `gumela@gmail.com` (Google login), personal free-tier plan, single tailnet.
+- **Registered devices:**
+  - `oracle-vps-parolin` → Tailscale IP `100.105.170.101` (Linux, `--ssh` flag enabled, gives
+    Tailscale-native SSH as well)
+  - `gus-legion` → Tailscale IP `100.80.107.67` (Windows 11 dev laptop)
+- **Install on a new Linux host:** `curl -fsSL https://tailscale.com/install.sh | sudo sh && sudo tailscale up --hostname=<name> --ssh`
+- **Install on Windows:** `winget install --id Tailscale.Tailscale -e` (note capital T's — case-sensitive).
+  After install, use the **GUI tray app** ("Sign in to your network") to authenticate — running
+  `tailscale up` from CLI alone doesn't always complete auth on Windows (GUI intercepts the OAuth
+  flow). Enable "Run unattended" in tray Preferences to make the connection survive reboots without
+  a desktop login.
+- **When to use Tailscale IP vs public IP:** for SSH and DBeaver tunnels, prefer the Tailscale IP
+  (`100.105.170.101`) — it never changes and doesn't depend on the Oracle Security List. Public IP
+  is still needed for Cloudflare → Coolify traffic (API traffic goes through CF Zero Trust, not Tailscale).
+
+### Postgres — one container per app
+
+Each app gets its **own dedicated PostgreSQL Docker container** on the VPS. There is no shared
+Postgres server with multiple databases. Isolation is at the container level (separate credentials,
+separate storage, separate network endpoint).
+
+**Finding a container's internal IP** (needed for DBeaver — see below):
+```bash
+sudo docker inspect <uuid> --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+```
+All app containers are on the `coolify` Docker bridge network, subnet `10.0.2.0/24`. The VPS host
+can reach any container IP directly; DBeaver uses the SSH tunnel to the VPS host, then forwards to
+the container IP.
+
+**Known container IPs (current, may change after container recreation):**
+
+| App | Container UUID prefix | Internal IP | DB name | DB user | Note |
+|---|---|---|---|---|---|
+| parafit | `eus6e9vzt2v0zssijpjppdrz` | `10.0.2.11` | `parafit` | `postgres` | legacy naming |
+| paramalhar | `py93j9ymwzqdszeq5p2qvxdu` | `10.0.2.8` | `paramalhar` | `paramalhar_app` | legacy naming |
+| recibos | `f13lkyius8n7ctiyksxfhx6u` | `10.0.2.4` | `recibos` | `postgres` | legacy naming |
+| trajetorias2 | `a7r8osrtc2xxs03tpcbkmw8h` | `10.0.2.6` | `trajetorias2` | `trajetorias2_app` | legacy naming |
+
+> **Note:** `coolify-db` (Coolify's own internal Postgres) must never be touched.
+
+### DBeaver — connecting to Postgres
+
+**Local Postgres** (same machine as the dev environment):
+- Host: `localhost`, Port: `5432`, User: `postgres`, Password: `MARCIE#5178nova` (URL-encoded: `MARCIE%235178nova`)
+- All local app databases live in this single instance: `parafit`, `workout_tracker` (paramalhar),
+  `recibos`, etc. Visible as separate nodes under "Databases" in the same DBeaver connection.
+
+**VPS Postgres** (per-app, one DBeaver connection each):
+- **Main tab:** Host = container's internal Docker IP (e.g. `10.0.2.11`), Port `5432`, Database =
+  app slug, User/Password from the app's Coolify environment variables.
+- **SSH tab:** Enable tunnel → Host `144.22.138.47` (or Tailscale IP `100.105.170.101`), Port `22`,
+  User `ubuntu`, Auth = Public Key → `~/.ssh/oracle_vps.key`.
+- **"Share this tunnel with other connections"** — keep this UNCHECKED if multiple VPS connections
+  are open simultaneously; the shared state can go stale (EOFException on all connections). Each
+  connection manages its own tunnel independently.
+
+### Cloudflare R2 — media and file storage
+
+- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `paramalhar-assets`).
+- Buckets are **private by default** — no public access. Serve files via pre-signed URLs or a Cloudflare
+  Worker with access controls.
+- Access from the backend via the standard S3 SDK:
+  - `S3_ENDPOINT=https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com`
+  - `S3_ACCESS_KEY` / `S3_SECRET_KEY` = R2 API token scoped to the bucket.
+  - `S3_BUCKET=<app>-assets`
+- Provision with `-EnableR2` flag in `provision.ps1` to create the bucket and inject the env vars.
+- For local dev: point `S3_ENDPOINT` at a local MinIO instance (`http://localhost:9000`).
+
+---
 
 ## Known gotchas
 
@@ -162,3 +300,18 @@ Always run `provision` in **dry-run first** (prints the intended calls), then `-
 13. **Oracle Cloud / VPS firewall** — if the VPS has a default Security List (Oracle) or firewall rules,
     inbound TCP 80 and 443 must be open to `0.0.0.0/0` for Cloudflare to reach Traefik/Coolify.
     Without this, the app may be `running:healthy` internally but unreachable externally.
+
+14. **Backend CD (fixed as of 2026-06-30)** — `deploy-backend.yml` was added to the Molde template;
+    `provision.ps1` now sets `COOLIFY_APP_UUID`, `COOLIFY_API_TOKEN`, `COOLIFY_API_URL`,
+    `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` as GitHub secrets automatically.
+    **For apps provisioned before 2026-06-30** (parafit, recibos, trajetorias2, paramalhar):
+    set the missing secrets manually with `gh secret set COOLIFY_APP_UUID --body <uuid>` etc.,
+    and confirm `deploy-backend.yml` is present in the repo's `.github/workflows/`.
+    Symptom if misconfigured: `/health` returns 200 but routes return `404` — server is up but
+    on old code.
+
+15. **Coolify Postgres internal DB name (fixed as of 2026-06-30)** — `provision.ps1` now passes
+    `postgres_db=<slug>-db`, `postgres_user=<slug>-user`, `postgres_password=<generated>` when
+    creating the Postgres container, so the DB is named correctly from the start.
+    **For apps provisioned before 2026-06-30** (parafit, recibos, trajetorias2, paramalhar):
+    the DB was renamed manually via `ALTER DATABASE postgres RENAME TO <slug>`. Already done.
