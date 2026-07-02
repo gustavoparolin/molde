@@ -273,6 +273,13 @@ the container IP.
   - `S3_BUCKET=<app>-assets`
 - Provision with `-EnableR2` flag in `provision.ps1` to create the bucket and inject the env vars.
 - For local dev: point `S3_ENDPOINT` at a local MinIO instance (`http://localhost:9000`).
+- **Don't reach for R2 by default for a small, rarely-changing set of files** (a handful of cover
+  photos, a logo, onboarding art). `frontend/public/<anything>` already ships as static files with
+  every Cloudflare Pages deploy — a plain relative path (`/assets/plans/covers/foo.jpg`) works in
+  both local dev and production with zero upload step, zero R2 credentials, zero extra script run.
+  R2 earns its cost for things that are numerous, generated at runtime, or updated independently of
+  a deploy (Parafit's exercise media scrape, user-uploaded photos) — not for a handful of
+  hand-picked images committed alongside the code that uses them.
 
 ---
 

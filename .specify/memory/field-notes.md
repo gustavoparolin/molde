@@ -434,3 +434,26 @@ in the URL") no `molde-brain.md`, logo após "The reference slice", com o padrã
 (`/feature/:resourceId?step=<n>`, restauração atômica, guarda por ref contra StrictMode) — não é
 código específico do Parafit, é um princípio de arquitetura de frontend que vale pra qualquer app
 Molde com fluxo em etapas (wizard, checkout, carrossel de itens, editor paginado).
+
+---
+
+## [2026-07-02] parafit — infra: R2 é overkill pra um punhado de imagens estáticas
+**Severity:** LOW
+**Status:** `promoted`
+
+Pedido: gerar e aplicar fotos de capa pra planos de treino (7 arquivos, ~130-200KB cada depois de
+converter PNG→JPEG). Reflexo automático foi seguir o padrão já existente no projeto
+(`uploadAssets.ts`, usado pros ~1500 assets de exercício vindos do scrape Technogym) — mas parar
+pra pensar revelou que isso é overkill pra esse caso: 7 arquivos que quase nunca mudam, versionados
+junto com o código de qualquer forma. `frontend/public/assets/` já vai pro deploy do Cloudflare
+Pages como está — um path relativo (`/assets/plans/covers/foo.jpg`) funciona em dev local E em
+produção sem nenhum passo de upload, sem precisar das credenciais R2 no `.env`.
+
+**Fix:** guardou os arquivos direto em `frontend/public/assets/plans/covers/`, sem tocar no
+`uploadAssets.ts`/R2 pra esse caso. `Plan.coverImageUrl` aponta pro path relativo direto.
+
+**Template impact:** adicionado um bullet na seção "Cloudflare R2 — media and file storage" do
+`molde-brain.md` deixando explícito quando NÃO vale a pena usar R2 — conjunto pequeno/raramente
+atualizado de arquivos versionados com o código (logo, capas, arte de onboarding) vai direto em
+`frontend/public/`; R2 compensa pra coisas numerosas, geradas em runtime, ou atualizadas
+independente de deploy (scrape de mídia, foto que o usuário sobe).
