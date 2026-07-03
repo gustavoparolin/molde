@@ -457,3 +457,39 @@ produção sem nenhum passo de upload, sem precisar das credenciais R2 no `.env`
 atualizado de arquivos versionados com o código (logo, capas, arte de onboarding) vai direto em
 `frontend/public/`; R2 compensa pra coisas numerosas, geradas em runtime, ou atualizadas
 independente de deploy (scrape de mídia, foto que o usuário sobe).
+
+## [2026-07-03] parafit — pattern: e2e specs compartilhando UM usuário de teste corre risco de race quando a suite cresce
+**Severity:** HIGH
+**Status:** `noted`
+
+Setup típico de Playwright + mock-auth (padrão usado neste template): um `globalSetup.ts` roda
+UMA VEZ pra toda a suite, autentica um usuário fixo (`e2e@parafit.test`), seeda um plano/fixture
+pra ele, e todo spec injeta o MESMO token via `page.addInitScript`. Funciona bem com poucas specs.
+Mas se dois specs quaisquer chamam uma ação que tem um invariante "descarta qualquer outro estado
+pendente deste usuário" (aqui: iniciar um treino descarta qualquer sessão ativa/pausada anterior
+do MESMO usuário, pra evitar "lixo da memória" entre execuções), e o Playwright agenda esses dois
+specs em WORKERS PARALELOS diferentes (comportamento padrão com `fullyParallel: true`), um pode
+silenciosamente roubar o estado do outro no meio do teste — o segundo spec simplesmente falha com
+um erro que não faz sentido à primeira vista ("session status: active, esperava completed").
+Passou despercebido enquanto a suite tinha só 1 spec que criava sessão; virou flake real assim que
+um segundo apareceu.
+
+**Fix:** trocar o usuário global único por um **fixture Playwright com escopo de worker**
+(`{ scope: "worker" }`) que cria um usuário sintético só pra aquele worker
+(`e2e-worker-<index>@parafit.test`, idempotente entre execuções via upsert por email/subject id) e
+seeda o fixture dele na primeira vez que é usado. Um fixture auto (`{ auto: true }`) sobrescreve o
+`page` built-in pra injetar auth automaticamente — elimina o boilerplate de `beforeEach` que cada
+spec tinha. Tests dentro do MESMO worker continuam rodando sequencialmente (sem race entre eles);
+workers diferentes agora têm usuários diferentes (sem race entre specs). Pegadinhas que apareceram
+junto: (1) specs que dependem um do outro (ex: "criar entrada" → "remover entrada") precisam de
+`test.describe.configure({ mode: "serial" })` pra garantir que caem no MESMO worker — sem isso,
+`fullyParallel` pode espalhar os dois testes de um mesmo `describe` em workers diferentes, cada um
+com seu próprio usuário isolado, quebrando a dependência; (2) testes que dependiam de "estado
+acumulado historicamente pelo usuário compartilhado" (ex: histórico de sessões completadas) só
+passavam por acidente — a isolação por worker expôs que o "happy path" nunca era de fato garantido,
+precisou de fixture data explícita por teste.
+
+**Template impact:** vale documentar esse padrão (`e2e/fixtures.ts` com worker-scoped fixture +
+`page` override) na seção de E2E do `molde-brain.md`, como alternativa recomendada ao
+`globalSetup.ts` de usuário único assim que uma suite passar de ~3-4 specs ou começar a ter mais
+de um spec que mexe em estado "por usuário" (sessões, "plano atual", etc).
