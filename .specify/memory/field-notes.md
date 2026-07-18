@@ -493,3 +493,67 @@ precisou de fixture data explícita por teste.
 `page` override) na seção de E2E do `molde-brain.md`, como alternativa recomendada ao
 `globalSetup.ts` de usuário único assim que uma suite passar de ~3-4 specs ou começar a ter mais
 de um spec que mexe em estado "por usuário" (sessões, "plano atual", etc).
+
+---
+
+## [2026-07-17] parafin — infra: `.specify/scripts/` vem vazio no template — `/speckit-plan` não acha `setup-plan.ps1`
+**Severity:** HIGH
+**Status:** `noted`
+
+O template Molde tem `.specify/scripts/` (bash e powershell) como diretório **vazio** — não só no
+app gerado, mas na própria pasta `molde/.specify/scripts/` de origem. `init-options.json` seta
+`"script": "ps"`, então a skill `/speckit-plan` tenta rodar
+`.specify/scripts/powershell/setup-plan.ps1 -Json` e falha (exit 64, arquivo não existe). O mesmo
+provavelmente vale para outros scripts core do spec-kit (`create-new-feature`, `check-prerequisites`,
+`update-agent-context` — este último já existe só dentro de `extensions/agent-context/scripts/`,
+fora do padrão). Não há `specify` CLI instalado globalmente nesta máquina para regenerar os scripts
+(`which specify` → nada; só `uvx` disponível).
+
+Contornei fazendo manualmente o que o script faria: usar `.specify/feature.json` (escrito pela
+skill `speckit-specify`) para achar `SPECIFY_FEATURE_DIRECTORY`, copiar `plan-template.md` para
+`plan.md` à mão, e preencher Technical Context/Constitution Check/Project Structure lendo o
+`package.json`/estrutura real do backend e frontend em vez de depender do script de setup.
+
+**Template impact:** ou (a) vendorizar os scripts core do spec-kit (`common.ps1`/`.sh`,
+`create-new-feature`, `setup-plan`, `check-prerequisites`, `update-agent-context`) dentro de
+`molde/.specify/scripts/` na origem, para todo app copiado já vir com eles: ou (b) documentar no
+`molde-brain.md` que `/speckit-plan`/`/speckit-tasks` exigem rodar `specify init`/`specify check`
+uma vez (via `uvx --from git+https://github.com/github/spec-kit.git specify ...`) antes do primeiro
+uso, com instrução de qual comando exato roda isso. Vale confirmar qual das duas é a intenção
+correta antes de "promover" esta entrada.
+
+---
+
+## [2026-07-18] parafin — bug: `provision.ps1` cria o Postgres com `postgres_db`/`postgres_user` hifenizados → Coolify rejeita
+**Severity:** CRITICAL
+**Status:** `fixed-in-template` (corrigido neste commit em `scripts/provision.ps1`, propagar ao `molde/` origem)
+
+`provision.ps1 -Execute` falhava no passo "Coolify Postgres" com `422 Validation failed: "postgres_user field format is invalid", "postgres_db field format is invalid"`. Causa: o script passava `postgres_db="$Slug-db"` e `postgres_user="$Slug-user"` (com hífen) — a API de criação de banco do Coolify valida esses dois campos como identificador (sem hífen permitido), diferente do campo `name` (label livre) que aceita qualquer string. O nota #15 do `molde-brain.md` ("Coolify Postgres internal DB name — fixed as of 2026-06-30") documentava a convenção com hífen como se já funcionasse via API, mas na prática só foi testada via `ALTER DATABASE ... RENAME TO` manual em apps antigos — o caminho `-Execute` real nunca tinha sido exercitado ponta a ponta antes do Parafin.
+
+**Fix aplicado:** `postgres_db`/`postgres_user` agora usam underscore (`${Slug}_db`/`${Slug}_user`), mantendo o `name` (label do recurso no Coolify) com hífen.
+
+**Template impact:** já corrigido em `Parafin/scripts/provision.ps1` — replicar o mesmo diff em `molde/scripts/provision.ps1` (o `$dbNameLabel`/`$dbNameId`/`$dbUserId` no lugar de `$dbName`/`$dbUser`).
+
+---
+
+## [2026-07-18] parafin — bug: `provision.ps1` cria o Postgres mas nunca o inicia — deploy do app falha com Prisma P1001
+**Severity:** CRITICAL
+**Status:** `fixed-in-template` (corrigido neste commit em `scripts/provision.ps1`, propagar ao `molde/` origem)
+
+Mesmo depois de corrigir o bug acima, o primeiro deploy do app falhou (`unhealthy`, rollback automático do Coolify) com `Error: P1001: Can't reach database server`. Investigando via SSH (Tailscale) + `docker ps` + query direta no Postgres interno do Coolify (`coolify-db`), descobri que **o container do Postgres nunca tinha sido criado** — `POST /api/v1/databases/postgresql` só registra o *recurso* no Coolify (fica com `status: exited`), não sobe o container. É preciso um `GET /api/v1/databases/{uuid}/start` explícito depois, e esperar ficar `running`/healthy antes de disparar o deploy do app (senão a app tenta conectar num banco que não existe ainda).
+
+Isso não é mencionado em nenhum lugar do `molde-brain.md` — provavelmente porque em runs anteriores o Postgres foi startado manualmente pelo Coolify UI ou por coincidência de timing, mascarando o bug.
+
+**Fix aplicado:** `provision.ps1` agora chama `start` logo após criar o Postgres e faz polling (até 150s) até `status` reportar `running` antes de prosseguir para a criação da Application.
+
+**Template impact:** já corrigido em `Parafin/scripts/provision.ps1` — replicar o mesmo diff em `molde/scripts/provision.ps1`.
+
+---
+
+## [2026-07-18] parafin — gotcha: `ALLOWED_EMAILS` (allowlist de acesso) não é setado pelo provision.ps1 — app fica aberto por padrão
+**Severity:** HIGH
+**Status:** `noted`
+
+Para apps que implementam uma allowlist de e-mail própria (padrão adicionado no Parafin para restringir acesso a 2 usuários da família, FR-017 — ver `googleAuth.ts` / `isEmailAllowed`), `provision.ps1` não seta essa env porque ela não existe no `provision.env` global (é config por-app, não credencial de infra compartilhada). Resultado: logo após o primeiro deploy, **qualquer conta Google (ou o endpoint `/auth/google/mock`, que fica sempre ativo em produção) conseguia logar** — a app ficou sem restrição de acesso por alguns minutos até eu perceber e setar `ALLOWED_EMAILS` manualmente via API do Coolify + redeploy.
+
+**Template impact:** para apps com allowlist própria, `provision.ps1` deveria aceitar um parâmetro explícito (ex.: `-AppEnv @{ ALLOWED_EMAILS = "..." }`) para envs app-specific que não pertencem ao `provision.env` compartilhado, setadas ANTES do primeiro deploy — não depois. Vale considerar isso como um passo obrigatório do checklist de deploy sempre que o app tiver algum controle de acesso próprio além do OAuth padrão.

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   exchangeGoogleCodeForProfile,
   getGoogleOAuthAuthorizeUrl,
+  isEmailAllowed,
   isGoogleOAuthConfigured,
   requireAuth,
 } from "../../auth/googleAuth.js";
@@ -53,6 +54,13 @@ export async function registerAuthRoutes(server: FastifyInstance): Promise<void>
 
     try {
       const profile = await exchangeGoogleCodeForProfile(query.code);
+
+      if (!isEmailAllowed(profile.email)) {
+        onAuthFailure(`email not allowed: ${profile.email}`, "google");
+        reply.redirect(`${frontendUrl()}/auth/callback?error=forbidden`);
+        return;
+      }
+
       const user = await upsertGoogleUser({
         googleSubjectId: profile.subject,
         email: profile.email,
@@ -75,32 +83,43 @@ export async function registerAuthRoutes(server: FastifyInstance): Promise<void>
     }
   });
 
-  // DEV-only shortcut: sign in without configuring OAuth. The frontend hides this
-  // behind import.meta.env.DEV, and it is harmless in production (still issues a real JWT).
-  server.post("/auth/google/mock", async (request, reply) => {
-    const parsed = MockGooglePayload.safeParse(request.body);
-    if (!parsed.success) {
-      reply.code(400).send({ message: "Invalid request", issues: parsed.error.issues });
-      return;
-    }
+  // DEV/test-only shortcut: sign in without configuring OAuth (used by local dev and the
+  // e2e suite). This issues a REAL JWT for any email — upsertGoogleUser matches by
+  // googleSubjectId OR email and will rebind an existing account's googleSubjectId to
+  // whatever the caller sends, i.e. a full account takeover for anyone who knows a user's
+  // email. Must never be reachable in production; not just hidden from the frontend, which
+  // only hides the *button* and does nothing to stop a direct HTTP call against the API.
+  if (process.env.NODE_ENV !== "production") {
+    server.post("/auth/google/mock", async (request, reply) => {
+      const parsed = MockGooglePayload.safeParse(request.body);
+      if (!parsed.success) {
+        reply.code(400).send({ message: "Invalid request", issues: parsed.error.issues });
+        return;
+      }
 
-    const user = await upsertGoogleUser(parsed.data);
-    const token = await reply.jwtSign({
-      userId: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
-    });
+      if (!isEmailAllowed(parsed.data.email)) {
+        reply.code(403).send({ message: "Email not allowed" });
+        return;
+      }
 
-    onMockAuthUsed(user.id);
-    reply.code(200).send({
-      userId: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
-      token,
+      const user = await upsertGoogleUser(parsed.data);
+      const token = await reply.jwtSign({
+        userId: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+      });
+
+      onMockAuthUsed(user.id);
+      reply.code(200).send({
+        userId: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        token,
+      });
     });
-  });
+  }
 
   server.get("/auth/me", async (request, reply) => {
     const auth = await requireAuth(request, reply);

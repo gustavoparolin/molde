@@ -89,8 +89,20 @@ Provision with `-EnableAI` flag.
 
 See **`parolin-stack.md`** §3.2 for the full flow diagram. Summary:
 `GET /auth/google/login` → Google consent → `GET /auth/google/callback?code=…` → JWT signed →
-redirect to frontend `/auth/callback?token=<jwt>`. Stateless. DEV mock behind `import.meta.env.DEV`.
+redirect to frontend `/auth/callback?token=<jwt>`. Stateless. `/auth/google/mock` (the DEV
+shortcut) only registers when `NODE_ENV !== "production"` — not just hidden from the frontend
+button, the route itself doesn't exist in prod.
 A **single shared OAuth client** serves all `*.parolin.net`; per app, add one redirect URI (~30s).
+
+**Access restriction (`ALLOWED_EMAILS`)** — the shared OAuth client lets **any Google account**
+complete the consent flow; nothing at the Google/Cloudflare layer restricts who can log in to a
+given app. Every generated app ships `isEmailAllowed()` in `googleAuth.ts`, wired into both
+`/auth/google/callback` and (when reachable) `/auth/google/mock`. `ALLOWED_EMAILS` empty/absent =
+open to any account (fine for public/multi-user apps); for personal/family apps, **always set it
+in production** — discovered 2026-07-18 when Parafin (and, in the same sweep, parafit/recibos/
+paramalhar) had zero access restriction for the first minutes after deploy. `provision.ps1` takes
+an optional `-AllowedEmails "a@x.com,b@x.com"` parameter that sets this **before** the first deploy
+(see Deploy pipeline below) — pass it whenever the app is personal/family-use, not public.
 
 ## Deploy pipeline (by API — the molde-deploy skill)
 

@@ -9,6 +9,9 @@ param(
   [string]$Slug,
   [switch]$EnableR2,
   [switch]$EnableAI,
+  # Comma-separated emails allowed to log in (sets ALLOWED_EMAILS — see googleAuth.ts /
+  # molde-brain.md §Auth flow). Pass this for personal/family apps; omit for public apps.
+  [string]$AllowedEmails,
   [switch]$Execute
 )
 $ErrorActionPreference = "Stop"
@@ -89,14 +92,37 @@ if ($EnableR2) {
 }
 
 # ── 4) Coolify Postgres ──────────────────────────────────────────────────────
-# Naming convention: db=$Slug-db  user=$Slug-user  password=generated
-$dbName   = "$Slug-db"
-$dbUser   = "$Slug-user"
-$dbPass   = (node -e "console.log(require('crypto').randomBytes(24).toString('hex'))").Trim()
-$pg = Call "Coolify Postgres ($dbName)" "POST" "$coolUrl/api/v1/databases/postgresql" $coolHdr `
-  @{ server_uuid = $coolSrv; project_uuid = $coolProj; environment_name = "production"; name = "$Slug-db";
-     postgres_db = $dbName; postgres_user = $dbUser; postgres_password = $dbPass }
+# Naming convention: name(label)=$Slug-db  postgres_db/postgres_user=underscore
+# (Coolify's validation rejects hyphens in postgres_db/postgres_user — "field
+# format is invalid" — even though the display "name" accepts them freely.)
+$dbNameLabel = "$Slug-db"
+$dbNameId    = "${Slug}_db" -replace '-', '_'
+$dbUserId    = "${Slug}_user" -replace '-', '_'
+$dbPass      = (node -e "console.log(require('crypto').randomBytes(24).toString('hex'))").Trim()
+$pg = Call "Coolify Postgres ($dbNameLabel)" "POST" "$coolUrl/api/v1/databases/postgresql" $coolHdr `
+  @{ server_uuid = $coolSrv; project_uuid = $coolProj; environment_name = "production"; name = $dbNameLabel;
+     postgres_db = $dbNameId; postgres_user = $dbUserId; postgres_password = $dbPass }
+$dbUuid = if ($dry) { "<db-uuid>" } else { $pg.uuid }
 $databaseUrl = if ($dry) { "<connection-string-from-coolify>" } else { $pg.internal_db_url }
+
+# Creating the Postgres resource does NOT start its container — it stays
+# "exited" until explicitly started, and the app deploy will fail with Prisma
+# P1001 ("Can't reach database server") if it races ahead of this. Start it
+# and wait for the container to actually report healthy before continuing.
+Call "Coolify Postgres start ($dbNameLabel)" "GET" "$coolUrl/api/v1/databases/$dbUuid/start" $coolHdr $null | Out-Null
+if (-not $dry) {
+  Write-Host "  waiting for Postgres to become healthy..." -ForegroundColor DarkGray
+  $healthy = $false
+  for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Seconds 5
+    try {
+      $status = (Invoke-RestMethod -Method GET -Uri "$coolUrl/api/v1/databases/$dbUuid" -Headers $coolHdr).status
+      if ($status -match "running") { $healthy = $true; break }
+    } catch {}
+  }
+  if (-not $healthy) { throw "Postgres did not become healthy within 150s — check Coolify dashboard." }
+  Write-Host "  Postgres healthy." -ForegroundColor Green
+}
 
 # ── 5) Coolify Application (deploy key — fully autonomous, no GitHub App grants) ─
 # Generate SSH deploy key → add public key to GitHub repo → add private key to Coolify
@@ -151,6 +177,12 @@ if ($EnableAI -or $cfg["AI_API_KEY"]) {
   $envs["AI_API_KEY"]  = Req "AI_API_KEY"
   $envs["AI_BASE_URL"] = if ($cfg["AI_BASE_URL"]) { $cfg["AI_BASE_URL"] } else { "https://open.bigmodel.cn/api/paas/v4" }
   $envs["AI_MODEL"]    = if ($cfg["AI_MODEL"]) { $cfg["AI_MODEL"] } else { "glm-4v-flash" }
+}
+if ($AllowedEmails) {
+  # App-specific access control — NOT a shared infra credential, so it never lives in
+  # provision.env. Set it here, BEFORE the first deploy, so the app is never open to any
+  # Google account even momentarily (see molde-brain.md §Auth flow for why this matters).
+  $envs["ALLOWED_EMAILS"] = $AllowedEmails
 }
 foreach ($k in $envs.Keys) {
   Call "Coolify env $k" "POST" "$coolUrl/api/v1/applications/$appUuid/envs" $coolHdr `

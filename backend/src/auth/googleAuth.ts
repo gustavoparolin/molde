@@ -21,6 +21,20 @@ export type GoogleOAuthProfile = {
   avatarUrl?: string;
 };
 
+// Allowlist opcional de e-mails que podem entrar. ALLOWED_EMAILS vazio/ausente libera
+// qualquer conta Google (comportamento padrão do skeleton). Para apps de uso restrito
+// (família, equipe pequena), defina ALLOWED_EMAILS em produção — sem isso, QUALQUER
+// conta Google consegue logar assim que o OAuth estiver configurado.
+export function isEmailAllowed(email: string): boolean {
+  const raw = process.env.ALLOWED_EMAILS ?? "";
+  const allowed = raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowed.length === 0) return true;
+  return allowed.includes(email.trim().toLowerCase());
+}
+
 export function isGoogleOAuthConfigured(): boolean {
   return (
     !!process.env.GOOGLE_CLIENT_ID &&
