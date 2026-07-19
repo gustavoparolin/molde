@@ -28,6 +28,98 @@ What happened, what the root cause was, and what the fix/pattern is.
 
 ---
 
+## [2026-07-19] coringao-orcamento — infra: Coolify API blocked by a Cloudflare challenge when called from GitHub Actions
+**Severity:** HIGH
+**Status:** `noted`
+
+`deploy-backend.yml`'s redeploy trigger (`curl .../api/v1/deploy?...`, run from a GitHub-hosted
+runner) got back a Cloudflare **Managed Challenge** HTML page ("Just a moment...") instead of
+reaching Coolify — even with the correct `CF-Access-Client-Id`/`CF-Access-Client-Secret` headers
+(those satisfy Cloudflare *Access*, but this looks like a separate zone-level Bot Fight Mode /
+WAF challenge that Access headers don't bypass). `curl` exits 22 on the non-2xx HTML response, so
+the job fails and the redeploy never actually happens. This was the **first time this exact call
+path was verified against a live GH Actions run** for any app — `provision.ps1` has set the
+backend-CD secrets automatically since 2026-06-30, but nothing confirmed the workflow actually
+*reaches* Coolify end-to-end from GitHub's IP ranges, so this may be silently broken for every
+app's backend CD (parafit, recibos, trajetorias2, paramalhar, celula), not just this one. Manually
+calling the same Coolify endpoint from a residential/dev-machine IP (not a GH Actions runner)
+worked fine, which points at the runner's IP reputation/ASN as the trigger, not the request itself.
+
+**Template impact:** needs a Cloudflare-side fix (WAF/Bot Fight Mode rule allow-listing GitHub
+Actions IP ranges for `coolify.parolin.net`, or a Cloudflare Access "Service Auth" bypass policy
+scoped to the API path) — this touches shared production security posture across every app on the
+zone, so an agent should not change it unilaterally; surface it to Gustavo first.
+
+## [2026-07-19] coringao-orcamento — bug: `deploy-backend.yml`'s curl call was silently unrunnable
+**Severity:** HIGH
+**Status:** `fixed-in-template`
+
+`curl -sf --fail-with-body` — `-f`/`--fail` and `--fail-with-body` are mutually exclusive in curl;
+combining them always errors with `curl: option --fail-with-body: is badly used here` (exit 2)
+before the request is even sent. Every backend CD run must have hit this immediately, meaning the
+Coolify redeploy trigger has likely never actually fired for **any** app since the workflow was
+added to the template (2026-06-30) — it's been silently failing (or silently skipping, for apps
+without the secrets set, which masked the bug). Found on `coringao-orcamento`'s first real run
+right after wiring up production secrets. Fixed in the template by dropping the redundant `-f`
+(`curl -s --fail-with-body ...`), which still fails the step (non-zero exit) on a non-2xx response
+while showing the response body — same intended behavior, just without the conflicting flag.
+
+**Template impact:** fixed directly in `molde/.github/workflows/deploy-backend.yml`. Apps
+provisioned before this fix should re-copy the corrected workflow file.
+
+## [2026-07-19] parafin — infra: hardcoded AI model defaults go stale in a matter of months
+**Severity:** CRITICAL
+**Status:** `promoted`
+
+`provision.env`'s `AI_MODEL` was `glm-4v-flash` (Z.AI/bigmodel.cn) — the API now rejects it with
+"model doesn't exist" (renamed/retired). Separately, `molde-brain.md`'s own documented default,
+**Gemini 2.0 Flash, was deprecated and shut down 2026-06-01** — so the template's "confirmed
+working" fallback was *also* dead by the time this was checked, just two months later. Neither
+failure was caught earlier because the PDF-extraction feature that depends on `AI_*` had been
+deployed but never actually exercised end-to-end with a real file — the failure was silent until
+someone finally clicked the button.
+
+**Fix:** two behavior changes going forward. (1) Never trust a hardcoded model name as
+"confirmed working" indefinitely — treat any `AI_MODEL` default as **time-sensitive**: at the
+moment a new app is provisioned, *or* whenever an existing app's AI feature starts erroring,
+research/verify the current best available model for the provider actually in use, rather than
+copying whatever name is in an old `.env.example` or a previous app's `provision.env`. (2) Any
+feature gated behind `AI_*` needs at least one real smoke-test call (not just unit tests with a
+mocked client) before being considered "done" — a mocked test can't catch a dead model name.
+
+**Template impact:** `molde-brain.md` §AI integration rewritten to drop the specific hardcoded
+default recommendation and instead instruct the agent to verify the current model at setup time.
+Also added Claude (via Anthropic's OpenAI-compat endpoint) as a validated higher-quality option,
+and a separate gotcha about not asking small/free models to do sign arithmetic on financial
+values (see next entry).
+
+---
+
+## [2026-07-19] parafin — gotcha: don't ask a free/flash LLM to compute value signs — ask it to perceive a flag instead
+**Severity:** HIGH
+**Status:** `promoted`
+
+Extracting credit-card transactions via LLM: when the prompt asked the model directly for a
+signed `"valor"` (negative for refunds/payments, positive for purchases), a free-tier flash model
+(GLM) applied the negative sign to *every* transaction, not just the credits — a real
+correctness bug that would have silently corrupted every backfilled transaction if unnoticed.
+Smaller/free/"flash"-tier models are unreliable at arithmetic/sign reasoning layered on top of
+extraction, even when the instruction is explicit and repeated.
+
+**Fix:** ask the model only to *perceive* something literally printed in the source (e.g., "does
+this line have a `CR` suffix? true/false" + `"valorAbsoluto"` always positive), then compute the
+signed value and the transaction type deterministically in code from that flag. This pattern
+generalizes: whenever an LLM extraction step also requires a derived computation (sign flips,
+date-year inference from a statement period crossing a year boundary, unit conversions), split it
+into "LLM perceives a raw/literal fact" + "code computes the derived value" — don't ask the LLM to
+do both perception and computation in one shot for anything that has a hard right answer.
+
+**Template impact:** worth a short callout in `molde-brain.md` §AI integration alongside the model
+freshness note above — not written into the shared code itself since it's a prompting pattern,
+not a reusable function.
+
+---
+
 ## [2026-06-15] recibos — bug: sharp `.metadata()` invalidates pipeline silently
 **Severity:** CRITICAL
 **Status:** `promoted`
@@ -557,3 +649,41 @@ Isso não é mencionado em nenhum lugar do `molde-brain.md` — provavelmente po
 Para apps que implementam uma allowlist de e-mail própria (padrão adicionado no Parafin para restringir acesso a 2 usuários da família, FR-017 — ver `googleAuth.ts` / `isEmailAllowed`), `provision.ps1` não seta essa env porque ela não existe no `provision.env` global (é config por-app, não credencial de infra compartilhada). Resultado: logo após o primeiro deploy, **qualquer conta Google (ou o endpoint `/auth/google/mock`, que fica sempre ativo em produção) conseguia logar** — a app ficou sem restrição de acesso por alguns minutos até eu perceber e setar `ALLOWED_EMAILS` manualmente via API do Coolify + redeploy.
 
 **Template impact:** para apps com allowlist própria, `provision.ps1` deveria aceitar um parâmetro explícito (ex.: `-AppEnv @{ ALLOWED_EMAILS = "..." }`) para envs app-specific que não pertencem ao `provision.env` compartilhado, setadas ANTES do primeiro deploy — não depois. Vale considerar isso como um passo obrigatório do checklist de deploy sempre que o app tiver algum controle de acesso próprio além do OAuth padrão.
+
+---
+
+## [2026-07-19] coringao-orcamento — infra: o bug de `.env`/Prisma da entrada `parafit` de 2026-06-29 continua vivo no template, 3 semanas depois, sem correção
+**Severity:** HIGH
+**Status:** `noted`
+
+Scaffoldeando este app em 2026-07-19, bati exatamente nos mesmos três problemas já documentados na entrada `parafit — bug: local Prisma 7 migrate fails` (linha acima, `noted` desde 29/06): `prisma.config.ts` sem `url`/sem carregar `.env`, `backend/package.json` `dev` sem `--env-file-if-exists`, e `prisma migrate dev` não gerando o client sozinho (precisei rodar `npx prisma generate` manualmente). Ou seja: o fix ficou documentado no field-notes mas **nunca foi aplicado ao template real** — o sistema de duas camadas (field-notes → molde-brain → template) tem um furo onde entradas `noted` se acumulam sem alguém promovê-las de fato para o código do Molde.
+
+Achado NOVO que a entrada de 29/06 não cobriu: **`frontend/vite.config.ts` também não carrega o `.env` da raiz** (Vite por padrão só lê `.env` de dentro da própria pasta `frontend/`, não do monorepo). Faltava `envDir: "../"` na config — sem isso, `VITE_API_BASE_URL` do `.env` raiz nunca chega ao frontend em dev.
+
+Achado NOVO #2: o `backend/package.json` do template tem `@prisma/client: ^7.8.0` nas `dependencies` mas `prisma: ^6.19.3` (CLI) nas `devDependencies` — desalinhado. O CLI 6.x não entende o formato de `prisma.config.ts` sem `url` explícito que o Prisma 7 client requer, e falha com `P1012 Argument "url" is missing`. Bump do `prisma` para `^7.8.0` resolveu.
+
+**Fix aplicado neste app:** os três fixes da entrada de 29/06 (aplicados de novo) + `envDir: "../"` no `vite.config.ts` + `prisma` bumped para `^7.8.0` no `backend/package.json`.
+
+**Template impact:** isto não é mais "vale aplicar quando alguém tiver tempo" — é o **segundo app em 3 semanas** batendo na mesma parede logo na primeira migration. Alguém (Gustavo ou um agente com esse mandato explícito) precisa efetivamente editar `molde/backend/prisma.config.ts`, `molde/backend/package.json` (script `dev` + versão do `prisma`) e `molde/frontend/vite.config.ts` no template-fonte, não só nas cópias gastas. Só marcar `noted` de novo não quebra o ciclo.
+
+---
+
+## [2026-07-19] coringao-orcamento — gotcha: campos de data "calendário puro" (sem hora) vazam bug de fuso horário se passarem por `Date` local em vez de UTC
+**Severity:** MEDIUM
+**Status:** `noted`
+
+Um campo tipo `dataOrcamento` (só data, sem hora, ex. `"2026-03-24"`) vira problema assim que alguém faz `new Date("2026-03-24")` (que o JS interpreta como **UTC meia-noite**) e depois formata com `.toLocaleDateString()` ou `.getDate()`/`.setDate()` (que usam o **fuso LOCAL** do processo). Em qualquer fuso atrás de UTC (Brasil inteiro, por exemplo), isso silenciosamente exibe o dia anterior. Bati nesse exato bug de forma independente em **três lugares** neste app (geração de PDF, cálculo de "válido até" num template de mensagem, e teria batido de novo num quarto se não tivesse consolidado) — é fácil de reintroduzir porque cada `new Date(stringDeData)` novo é um ponto de risco.
+
+**Fix:** criar um util só (`dateUtils.ts` neste app) com um punhado de funções que **nunca** usam getters/setters/formatters locais para esse tipo de campo — só as variantes UTC (`Date.UTC(...)`, `getUTCFullYear()`, `getUTCDate()`, `setUTCDate()`, ou formatação manual tipo `${dia}/${mes}/${ano}` a partir dos componentes UTC). Qualquer código que precise fazer aritmética ou exibir uma data-só-calendário passa por esse util, nunca por `Date`/`toLocaleDateString` crus.
+
+**Template impact:** se o esqueleto Molde ganhar algum campo de data-só (nascimento, vencimento, validade) em algum app de referência, vale plantar esse util (`dateUtils.ts` com `paraDataCalendario`/`adicionarDias`/`formatarDataBR`/`paraISODateString`) direto no esqueleto, com o comentário explicando o porquê — é mais barato prevenir do que cada app redescobrir isso.
+
+---
+
+## [2026-07-19] coringao-orcamento — gotcha: `Intl.NumberFormat`/`toLocaleString('pt-BR', {style:'currency'})` insere um espaço NÃO separável (U+00A0) entre "R$" e o número
+**Severity:** LOW
+**Status:** `noted`
+
+`(1690.75).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})` devolve `"R$ 1.690,75"` — visualmente idêntico a `"R$ 1.690,75"` com espaço comum, mas falha em qualquer comparação estrita (`toBe`, `===`) num teste. Um teste Vitest comparando string exata contra saída de formatação de moeda pt-BR quebrou por isso, com a mensagem de erro do Vitest mostrando "Expected" e "Received" **visualmente iguais** — só o modo verboso/diff de caractere (ou inspecionar os code points) revela a diferença.
+
+**Template impact:** qualquer app Molde que formate R$ (a maioria) e escreva teste comparando string literal vai bater nisso mais cedo ou mais tarde. Vale um comentário-lembrete perto de qualquer helper de `formatarMoeda` do esqueleto, ou usar `.toContain`/regex em vez de igualdade estrita nesses testes.

@@ -34,7 +34,7 @@ jobs:
       - name: Trigger Coolify redeploy
         if: steps.check.outputs.configured == 'true'
         run: |
-          curl -sf --fail-with-body \
+          curl -s --fail-with-body \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
             -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
