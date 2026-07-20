@@ -213,9 +213,13 @@ if (-not $dry) {
   gh secret set COOLIFY_API_URL        --body $coolUrl          --repo "$githubUser/$Slug" | Out-Null
   gh secret set CF_ACCESS_CLIENT_ID    --body $cfAccessId       --repo "$githubUser/$Slug" | Out-Null
   gh secret set CF_ACCESS_CLIENT_SECRET --body $cfAccessSec     --repo "$githubUser/$Slug" | Out-Null
+  # Fallback path for deploy-backend.yml: GitHub-hosted runner IPs get a Cloudflare
+  # Managed Challenge calling the Coolify API through the proxy, so the workflow falls
+  # back to calling the VPS origin directly when the Cloudflare path fails.
+  gh secret set COOLIFY_ORIGIN_IP      --body $cfTarget         --repo "$githubUser/$Slug" | Out-Null
   Write-Host "→ GitHub secrets set for backend auto-deploy" -ForegroundColor Yellow
 } else {
-  Write-Host "→ [dry] Would set COOLIFY_APP_UUID, COOLIFY_API_TOKEN, COOLIFY_API_URL, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET on $githubUser/$Slug" -ForegroundColor DarkGray
+  Write-Host "→ [dry] Would set COOLIFY_APP_UUID, COOLIFY_API_TOKEN, COOLIFY_API_URL, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, COOLIFY_ORIGIN_IP on $githubUser/$Slug" -ForegroundColor DarkGray
 }
 
 # ── 9) Initial deploy ─────────────────────────────────────────────────────────

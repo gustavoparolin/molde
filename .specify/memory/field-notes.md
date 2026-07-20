@@ -30,7 +30,18 @@ What happened, what the root cause was, and what the fix/pattern is.
 
 ## [2026-07-19] coringao-orcamento — infra: Coolify API blocked by a Cloudflare challenge when called from GitHub Actions
 **Severity:** HIGH
-**Status:** `noted`
+**Status:** `fixed-in-template`
+
+**Resolution (2026-07-20):** the provision token has no Zone Settings scope, so the WAF itself
+was left untouched (still Gustavo's call). Instead, `deploy-backend.yml` now tries the Cloudflare
+path first (real TLS; self-heals if the WAF is ever adjusted) and, on failure, falls back to
+calling the VPS origin directly via `curl --resolve <host>:443:$COOLIFY_ORIGIN_IP -k` — `-k` is
+required because Traefik serves its default self-signed cert on the direct path (the real cert
+lives at the CF edge); the request stays authenticated by the Coolify API bearer token.
+`provision.ps1` now sets the `COOLIFY_ORIGIN_IP` secret (from `COOLIFY_HOST`) automatically.
+Validated with a real workflow_dispatch run on coringao-orcamento: CF path challenged → fallback
+fired → Coolify queued the deployment. **Apps provisioned earlier need the secret set manually**
+(`gh secret set COOLIFY_ORIGIN_IP --body <vps-ip>`) plus the updated workflow file.
 
 `deploy-backend.yml`'s redeploy trigger (`curl .../api/v1/deploy?...`, run from a GitHub-hosted
 runner) got back a Cloudflare **Managed Challenge** HTML page ("Just a moment...") instead of

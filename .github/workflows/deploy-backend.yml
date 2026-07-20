@@ -1,9 +1,9 @@
 name: Deploy backend (Coolify)
 
 # Triggers a Coolify redeploy whenever backend code changes land on main.
-# Requires four repo secrets set automatically by provision.ps1:
+# Requires repo secrets set automatically by provision.ps1:
 #   COOLIFY_APP_UUID, COOLIFY_API_TOKEN, COOLIFY_API_URL,
-#   CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET
+#   CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET, COOLIFY_ORIGIN_IP
 # If any secret is missing, the job skips silently (template / pre-provision mode).
 
 on:
@@ -33,10 +33,38 @@ jobs:
 
       - name: Trigger Coolify redeploy
         if: steps.check.outputs.configured == 'true'
+        env:
+          API_URL: ${{ secrets.COOLIFY_API_URL }}
+          ORIGIN_IP: ${{ secrets.COOLIFY_ORIGIN_IP }}
         run: |
-          curl -s --fail-with-body \
+          DEPLOY_PATH="/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}&force=false"
+
+          # Primary path: through Cloudflare (real TLS cert at the edge). GitHub-hosted
+          # runner IPs currently receive a Cloudflare Managed Challenge here (bot
+          # protection at the zone edge — the CF Access service-token headers do not
+          # bypass it), so on failure we fall back to calling the origin VPS directly.
+          if curl -s --fail-with-body \
+              -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
+              -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+              -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
+              "${API_URL}${DEPLOY_PATH}"; then
+            echo "Coolify redeploy triggered (via Cloudflare) for ${{ github.repository }} @ ${{ github.sha }}"
+            exit 0
+          fi
+
+          if [ -z "$ORIGIN_IP" ]; then
+            echo "::error::Cloudflare path failed and COOLIFY_ORIGIN_IP is not set — cannot fall back."
+            exit 1
+          fi
+
+          # Fallback: direct to the VPS origin, bypassing the Cloudflare edge entirely.
+          # -k is required because Traefik serves its default self-signed cert on the
+          # direct path (the real certificate lives at the Cloudflare edge); the request
+          # is still authenticated by the Coolify API bearer token.
+          HOST="${API_URL#https://}"
+          echo "Cloudflare path failed (managed challenge?) — falling back to origin ${HOST} @ ${ORIGIN_IP}"
+          curl -sk --fail-with-body \
+            --resolve "${HOST}:443:${ORIGIN_IP}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
-            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
-            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
-            "${{ secrets.COOLIFY_API_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_APP_UUID }}&force=false"
-          echo "Coolify redeploy triggered for ${{ github.repository }} @ ${{ github.sha }}"
+            "${API_URL}${DEPLOY_PATH}"
+          echo "Coolify redeploy triggered (via origin) for ${{ github.repository }} @ ${{ github.sha }}"
