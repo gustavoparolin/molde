@@ -49,8 +49,8 @@ Reference implementation: Parafit's `ActiveSessionPage`/`sessionStore.loadSessio
 
 ## AI integration (optional)
 
-When the app needs vision/LLM: use the `openai` npm package with provider-agnostic env vars.
-Default provider in `.env.example`: Google Gemini (free tier, 15 RPM, 1500 req/day). OpenAI-compatible.
+When the app needs vision/LLM: use the `openai` npm package with provider-agnostic env vars —
+this part doesn't change. **The specific provider/model DOES change, fast — see below.**
 
 ```typescript
 import OpenAI from "openai";
@@ -61,17 +61,54 @@ const client = new OpenAI({
     ? { "ngrok-skip-browser-warning": "true" }
     : {},
 });
-// model = process.env.AI_MODEL ?? "gemini-2.0-flash"
+// model = process.env.AI_MODEL (no hardcoded fallback — see below)
 // max_tokens = Number(process.env.AI_MAX_TOKENS ?? 4096)
 ```
 
 Env vars: `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_MAX_TOKENS`, `OCR_TIMEOUT_MS`.
 
-**Confirmed working providers (tested with receipt OCR):**
-- Gemini 2.0 Flash: `https://generativelanguage.googleapis.com/v1beta/openai/` — fast, free tier
-- Ollama local (`qwen3-vl:30b`): `http://localhost:11434/v1` — 29 items extracted from physical receipt
+### ⚠️ Model/provider choice is time-sensitive — do not copy an old default blindly
+
+**Discovered 2026-07-19 (field-notes.md, same date):** within two months, BOTH previously
+"confirmed working" defaults documented here died — Gemini 2.0 Flash was deprecated and shut down
+2026-06-01, and Z.AI's `glm-4v-flash` (the one actually set in `provision.env`) started rejecting
+requests with "model doesn't exist." Neither failure was caught immediately because the feature
+depending on it wasn't smoke-tested with a real call right after being built.
+
+**Rule going forward:** whenever you're setting up AI for a new app, or debugging an existing
+app's AI feature that suddenly errors, **research the current best available model for the task
+at hand** (accuracy needs, free tier vs. paid, rate limits) instead of reusing whatever name is in
+an old `.env.example`/`provision.env` — a hardcoded name in this file is a snapshot, not a
+guarantee. After wiring it up, make at least one real (non-mocked) call before calling the feature
+done — unit tests with a mocked AI client cannot catch a dead model name.
+
+**Providers actually validated, with the date validated (check freshness before trusting):**
+- **Claude (Anthropic), via OpenAI-compat endpoint** — `baseURL: "https://api.anthropic.com/v1/"`,
+  model e.g. `claude-sonnet-5`/`claude-haiku-4-5` (use current model IDs, they change). Validated
+  2026-07-19 for structured extraction from messy real-world documents (credit card statements) —
+  strongest reliability of everything tried so far for ambiguous/multi-section text. **Caveat**:
+  Anthropic's own docs mark this compatibility layer as intended for testing/comparison, not as a
+  long-term production guarantee — `response_format`/JSON-mode and prompt caching are NOT
+  supported through it (system prompt + explicit "respond only with JSON" still works fine). Not
+  free — pay-per-token, but for typical extraction volumes (a handful to a few dozen documents a
+  month) the cost is cents, not dollars.
+- Gemini Flash (whatever the current-gen Flash model is — **2.0 Flash is dead**, verify the
+  current name before use): `https://generativelanguage.googleapis.com/v1beta/openai/` — generous
+  free tier, but the exact model id/limits reported here will be stale by the time you read this.
+- Ollama local (`qwen3-vl:30b`): `http://localhost:11434/v1` — 29 items extracted from physical
+  receipt. Free (self-hosted), but requires the host machine on; fine for one-off/manual batch
+  jobs, awkward for an always-on deployed backend unless tunneled.
   - Thinking model: requires `AI_MAX_TOKENS=16384` (4096 consumed by reasoning, no room for output)
   - Via ngrok: `AI_BASE_URL=https://<tunnel>.ngrok-free.dev/v1` + `ngrok-skip-browser-warning` header
+- Z.AI/GLM free tier — works when the model name is current, but has had repeated reliability/rate
+  limit revisions reported; treat as the fallback-of-last-resort, not the default.
+
+**Prompting gotcha (field-notes.md for detail):** don't ask a free/flash-tier model to compute a
+derived value (sign flips on credit/debit amounts, inferring a transaction's year from a statement
+period crossing a year boundary, unit conversions). Ask it to report only what's literally
+printed/perceivable (e.g., a boolean "is this line marked as a credit?"), then compute the derived
+value yourself in code. Smaller models are unreliable at layering arithmetic on top of extraction
+even when told exactly what to do.
 
 **Sharp image pipeline bug (CRITICAL if using sharp):**
 Never call `.metadata()` on the same Sharp instance used for pipeline output — it invalidates the lazy state silently.
