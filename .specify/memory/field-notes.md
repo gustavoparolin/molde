@@ -698,3 +698,132 @@ Um campo tipo `dataOrcamento` (só data, sem hora, ex. `"2026-03-24"`) vira prob
 `(1690.75).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})` devolve `"R$ 1.690,75"` — visualmente idêntico a `"R$ 1.690,75"` com espaço comum, mas falha em qualquer comparação estrita (`toBe`, `===`) num teste. Um teste Vitest comparando string exata contra saída de formatação de moeda pt-BR quebrou por isso, com a mensagem de erro do Vitest mostrando "Expected" e "Received" **visualmente iguais** — só o modo verboso/diff de caractere (ou inspecionar os code points) revela a diferença.
 
 **Template impact:** qualquer app Molde que formate R$ (a maioria) e escreva teste comparando string literal vai bater nisso mais cedo ou mais tarde. Vale um comentário-lembrete perto de qualquer helper de `formatarMoeda` do esqueleto, ou usar `.toContain`/regex em vez de igualdade estrita nesses testes.
+
+## [2026-07-22] cota4 — gotcha: guard de consentimento do Prisma bloqueia `migrate reset` em sessão autônoma
+**Severity:** LOW
+**Status:** `noted`
+
+`npx prisma migrate reset --force` (Prisma 7.8) dispara um guard anti-IA que exige consentimento explícito do usuário via env `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION` — num run autônomo/noturno isso trava o fluxo. Workaround limpo quando o banco é dev e descartável: dropar o banco direto (`node -e` com `pg`: `DROP DATABASE IF EXISTS x WITH (FORCE)`) e rodar `npx prisma migrate dev`, que recria e aplica as migrations do zero. Atenção também: se um `migrate dev --create-only` for interrompido no meio, a próxima invocação pode APLICAR o draft pendente em vez de só criar — confira `prisma/migrations/` antes de editar SQL de uma migration que você acha que ainda não foi aplicada.
+
+**Template impact:** documentar no molde-brain o workaround de reset para sessões autônomas.
+
+## [2026-07-22] cota4 — pattern: RLS multi-tenant com Prisma 7 funcionando de ponta a ponta (receita validada)
+**Severity:** HIGH
+**Status:** `noted`
+
+Receita completa validada com teste de integração (5/5): (1) migration inicial cria role de runtime sem bypass (`cota4_app`) + `ENABLE`/`FORCE ROW LEVEL SECURITY` + política `USING ("empresaId" = NULLIF(current_setting('app.current_empresa', true), '')::uuid)` — o NULLIF evita erro de cast com setting vazio e devolve zero linhas sem contexto; (2) dois clients Prisma: admin (DATABASE_URL, superuser, bypassa RLS para auth/painel/seeds) e app (DATABASE_URL_APP com a role restrita) com extension `$allModels.$allOperations` que roda CADA operação num batch transaction `[$executeRaw set_config('app.current_empresa', id, TRUE), query(args)]` lendo o id do AsyncLocalStorage — sem contexto, lança erro (guard-rail); (3) operações multi-passo atômicas (ex.: numeração sequencial com retry de P2002) via `$transaction(async tx => { await tx.$executeRaw set_config…; … })` no client SEM a extension de RLS (evita batch dentro de transação interativa); (4) tabelas admin-only ficam com RLS FORÇADO e SEM política — invisíveis para a role do app. Superuser bypassa RLS mesmo com FORCE, o que é exatamente o que migrations e o client admin precisam. Implementação de referência: `cota4/backend/src/repositories/db.ts` + migration `20260722020343_init_multitenant_rls`.
+
+**Template impact:** candidato a virar seção do molde-brain (ou variante multi-tenant do template) quando o próximo app multi-tenant nascer.
+
+## [2026-07-22] cota4 — bug: enterWith do AsyncLocalStorage dentro de requireAuth NÃO propaga para o handler (Node 24)
+**Severity:** HIGH
+**Status:** `noted`
+
+O padrão do template (setCurrentUser via `storage.enterWith(...)` chamado DENTRO do `requireAuth` async, que o handler awaita) perde o contexto: no Node 24.12 + Fastify 5, ao voltar do `await requireAuth(...)`, a continuação do handler retoma o contexto capturado antes — `getStore()` volta undefined e o extension de auditoria/RLS não vê nada. No cota4 isso quebrou 100% das rotas de tenant (o RLS falhava alto com "sem contexto"); num app só-auditoria o sintoma é pior: createdBy/updatedBy ficam NULL EM SILÊNCIO. Fix validado: hook `onRequest` do Fastify abrindo o store para o request inteiro (`storage.run({...}, done)`) e `requireAuth` apenas MUTANDO o objeto do store existente (mesma referência). Vale conferir se os apps derivados existentes (coringao etc.) estão realmente gravando createdBy ou se está nulo em produção.
+
+**Template impact:** corrigir o esqueleto do molde (googleAuth.ts + server.ts): onRequest hook com storage.run + setCurrentUser mutando o store.
+
+## [2026-07-22] cota4 — gotcha: extension de auditoria $allModels quebra em modelo sem colunas createdBy/updatedBy
+**Severity:** LOW
+**Status:** `noted`
+
+O extension do template injeta createdBy/updatedBy em TODO create/update/upsert ($allModels). No template todos os modelos têm as colunas, mas assim que o app cria um modelo sem elas (no cota4: EventoUso, ItemOrcamento, VisitanteDemo, SessaoImpersonacao) o Prisma 7 lança PrismaClientValidationError "Unknown argument createdBy" em runtime (typecheck não pega). Fix: allowlist `MODELOS_AUDITADOS` no extension usando o parâmetro `model` do hook.
+
+**Template impact:** comentar o gotcha no db.ts do esqueleto (ou usar allowlist desde o template).
+
+## [2026-07-22] cota4 — bug: provision.ps1 aborta no meio quando um POST de env do Coolify responde "already exists"
+**Severity:** HIGH
+**Status:** `noted`
+
+No provision do cota4, um dos POSTs de env respondeu `{"message": "Environment variable already exists. Use PATCH request to update it."}` (o Coolify pré-criou/normalizou envs do app recém-criado) e, com `$ErrorActionPreference = "Stop"`, o script abortou DEPOIS de criar DNS/Pages/Postgres/app e ANTES do patch de build/secrets/deploy — deixando o provisionamento pela metade. Fix aplicado no cota4: try/catch no loop de envs caindo para PATCH quando a mensagem contém "already exists" (idempotente). Recuperação do estado parcial: script de conclusão que lê as envs atuais (GET /envs), reconcilia POST/PATCH e reexecuta os passos 7–9.
+
+**Template impact:** aplicar o mesmo try/catch→PATCH no `scripts/provision.ps1` do template (o loop de envs é idêntico).
+
+## [2026-07-24] cota4 — infra: regenerating package-lock.json on Windows breaks Linux CI (missing native optional binaries)
+**Severity:** HIGH
+**Status:** `noted`
+
+Running `rm package-lock.json && npm install` on Windows (to force an override to re-resolve)
+silently dropped the *install entries* for native optional binaries of other platforms from the
+lockfile — 54 of them (`@rolldown/binding-*`, `@img/sharp-*`, `@astrojs/compiler-binding`). npm
+issue 4828: when it regenerates the tree on one platform, it keeps the optional-dep *names* under
+each package's `optionalDependencies` but omits the `node_modules/<pkg>` install entries for the
+non-current platforms. The site build (Astro/rolldown) then failed on Linux CI with
+`Cannot find module '@rolldown/binding-linux-x64-gnu'`. The app (Vite/rollup) and backend didn't
+use rolldown/sharp, so only the site broke. Fix: copy the missing native entries from a known-good
+lockfile (versions were identical), then `npm ci --dry-run` to confirm it's in sync — do NOT
+`npm install` again on Windows or it re-drops them.
+
+**Template impact:** never fully regenerate the lockfile on Windows; use incremental `npm install <pkg>`
+for dep changes. Consider generating/refreshing the lockfile in a Linux step (or documenting it),
+and add a CI note so this failure mode is recognized instantly.
+
+## [2026-07-24] cota4 — gotcha: OAuth state/PKCE cookie requires redirect_uri on the SAME host the frontend calls for /login
+**Severity:** HIGH
+**Status:** `noted`
+
+Hardening the Google OAuth flow with a signed HttpOnly cookie (state + PKCE code_verifier) turned
+a previously stateless flow into one that depends on domain consistency. The SPA calls
+`${VITE_API_BASE_URL}/auth/google/login` (here `api.cota4.com.br`), so the cookie is set host-only
+on that domain; but `GOOGLE_REDIRECT_URI` still pointed at the old host (`cota4-api.parolin.net`),
+so Google returned to a different domain where the cookie didn't exist → callback rejected every
+login with `state_invalido`. Fix: set `GOOGLE_REDIRECT_URI` to the SAME host as `VITE_API_BASE_URL`
+(both must also be authorized in the Google client). Stateless OAuth tolerated the mismatch; the
+cookie does not.
+
+**Template impact:** when the login flow uses a cookie for state/PKCE, document that `VITE_API_BASE_URL`
+and `GOOGLE_REDIRECT_URI` must share the same host, and flag it during the domain cutover checklist.
+
+## [2026-07-24] cota4 — infra: backup de banco via API do Coolify (receita completa; nenhum banco da VPS tinha backup)
+**Severity:** HIGH
+**Status:** `noted`
+
+Descoberta: nenhum Postgres provisionado pelo Molde tinha backup agendado (o único que tinha era o `py93...`, criado junto com a instalação do Coolify). A receita para configurar 100% via API, validada em todos os 7 bancos da VPS: (1) o Coolify 4.1.2 tem `POST/PATCH /api/v1/databases/{uuid}/backups` com `frequency` (cron ou `daily`), `save_s3`, `s3_storage_uuid`, retenções local/S3 e `backup_now` para disparar na hora; (2) **não existe endpoint para cadastrar o storage S3** — é só pela UI (S3 Storages → Add) e a API também não lista os existentes, então o uuid vem da URL da página do storage (`/storages/<uuid>`); o da VPS atual é `tui1mnn3mr9j0u7g96gy4xw2` (nome `r2-backups`, bucket R2 `coolify-backups`, endpoint da conta, region `auto`); (3) padrão adotado: `frequency "0 3 * * *"` (03:00 UTC = 00:00 BRT), retenção 7 local / 30 S3; (4) verificação fim-a-fim: `GET .../backups/{uuid}/executions` até `success`, depois listar o bucket via S3 API (`curl --aws-sigv4` com as chaves R2 do provision.env) e conferir o magic `PGDMP` do dump baixado.
+
+Gotchas encontrados: (a) se o `postgres_db` registrado no Coolify não bater com o banco real do container, o pg_dump falha com `database "postgres" does not exist` — corrigir com `databases_to_backup` apontando o nome real (caso recibos: banco `recibos`); (b) dump de MariaDB grande (celula: 2,4 GB) estoura rápido o free tier do R2 (10 GB) com retenção 30 — reduzir para 2 local / 7 S3 nesses casos; (c) `sleep` entre criação e verificação: a 1ª execução leva ~10–20 s para Postgres pequenos, minutos para dumps GB.
+
+**Template impact:** o `provision.ps1` deveria criar o backup agendado logo após criar o Postgres (POST acima com o `s3_storage_uuid` fixo da VPS em provision.env, ex. `COOLIFY_S3_STORAGE_UUID=tui1mnn3mr9j0u7g96gy4xw2`), para que nenhum app novo nasça sem backup. Segunda cópia caseira: Synology Cloud Sync puxando o bucket `coolify-backups` (S3 endpoint custom do R2, download-only).
+
+**Validação da ponta Synology (mesmo dia, ~23h30):** DSM Cloud Sync funcionou de primeira contra o R2 — provedor "S3 Storage" → Custom Server URL `<account>.r2.cloudflarestorage.com` (sem https://), signature **v4**, bucket escolhido no dropdown (a listagem funcionou, prova de que as credenciais e o endpoint bastam), direção "Baixar apenas alterações remotas", consistência avançada ON, "não remover arquivos do destino" ON (perfil arquivo profundo: o NAS acumula além da retenção da nuvem). Primeira sync desceu ~2,6 GB incluindo um dump de 2,41 GB sem engasgar (parte de 128 MB default). Gotchas: (a) com "não remover" ON e dumps grandes, agendar limpeza no Task Scheduler do NAS (`find .../celula-db-* -name "*.dmp" -mtime +14 -delete`); (b) se a pasta local escolhida for o home do usuário, o caminho real para scripts é `/volume1/homes/<usuário>/...`, não `/home/...`; (c) recomendável token R2 read-only para o NAS, em vez das chaves de leitura+escrita do provision.env — MAS com duas armadilhas descobertas a caro preço em 2026-07-25: **(c1) o campo Server address do Cloud Sync exige o hostname PURO, sem `https://`** — com o esquema na frente o wizard falha com o erro genérico "Failed to list buckets. authentication failed", mesmo com credenciais perfeitas (o Hyper Backup aceita igual, hostname puro); **(c2) `ListBuckets` no R2 é operação de nível Admin** — token "Object Read only" NÃO lista buckets nem com escopo All buckets, e o dropdown de bucket dos wizards (Cloud Sync e Hyper Backup) depende disso; para read-only duro que funcione nos wizards, usar permissão **Admin Read only** (lê tudo, lista buckets, não escreve/apaga/cria nada).
+
+## [2026-07-25] coringao-orcamento — pattern: PDF do PDFKit não se testa procurando texto no buffer; use um duble que registra os `text()`
+**Severity:** LOW
+**Status:** `noted`
+
+Ao cobrir com teste o gerador de PDF (layout programático com PDFKit — decisão de arquitetura do Molde, porque o VPS ARM não tem Chromium), a tentativa óbvia falha: gerar o Buffer e procurar strings dentro dele não encontra nada, porque os streams saem comprimidos com FlateDecode e as fontes embarcadas são subsets (o texto vira glyph id sem ToUnicode). Descomprimir com zlib resolve a compressão mas esbarra no mapeamento de glifos.
+
+O que funcionou: substituir o PDFKit por um duble — `vi.mock("pdfkit", () => ({ default: FakePDFDocument }))`, com a classe criada dentro de `vi.hoisted` para poder ser referenciada na factory — implementando só a superfície usada (`rect/fill/font/fontSize/fillColor/strokeColor/text/heightOfString/moveTo/lineTo/stroke/moveDown/addPage/on/end`) e registrando cada `text()` junto com a página corrente. Com isso dá para assertar presença/ausência de bloco ("no tipo venda não desenha 'Valor por m²'") e, o que mais importa, invariantes de paginação — no caso, provar que a observação de um item nunca é desenhada em página diferente da descrição dele. Um `heightOfString` aproximado (proporcional a tamanho do texto e largura) já exercita a quebra de página de verdade; 18 testes em ~25 ms.
+
+**Template impact:** vale um `pdfService.spec.ts` de exemplo com esse duble no esqueleto — o PDF programático nasce sem teste hoje, e o caminho errado custa um bom tempo antes de ficar claro que não tem saída.
+
+## [2026-07-25] coringao-orcamento — gotcha: testar store zustand/persist no Vitest do frontend exige stub de localStorage E de window
+**Severity:** LOW
+**Status:** `noted`
+
+O primeiro teste unitário do store do frontend quebra logo no import: o `apiClient` lê `localStorage.getItem("auth.token")` no topo do módulo e o ambiente de teste do Molde é `node`, sem jsdom. Puxar jsdom só por isso é caro; um localStorage falso em memória num `setupFiles` resolve em ~20 linhas.
+
+O detalhe que custa tempo: só `globalThis.localStorage` não basta. O `zustand/persist` procura o storage em `window`, então sem `globalThis.window = { localStorage }` os testes passam mas cada `set()` despeja "[zustand persist middleware] Unable to update item ... the given storage is currently unavailable" na saída. Os dois stubs juntos deixam a suíte limpa e sem dependência nova.
+
+**Template impact:** incluir `frontend/vitest.config.ts` (environment node, `include: src/**/*.spec.ts`, `setupFiles`) e `frontend/src/test/setup.ts` com os dois stubs no esqueleto — hoje o app nasce com `--passWithNoTests` e o primeiro teste de store tropeça nisso.
+
+## [2026-07-26] cota4 — pattern: testes verdes não provam nada se cobrem o guard e não o CAMINHO (3 bugs em produção numa semana)
+**Severity:** CRITICAL
+**Status:** `noted`
+
+Em 4 dias, 3 bugs chegaram em produção com typecheck, lint, 118 testes e E2E **todos verdes** — e foram descobertos por uma usuária real, não pela suíte. A autópsia achou três furos que são de PROCESSO, não de disciplina, e que qualquer app do Molde tem por construção:
+
+**1. O teste cobria o guard, não o caminho que roda.** O commit de hardening anti-SSRF adicionou 3 testes — todos no `urlSegura()` (uma pré-checagem barata) e ZERO no `lookupSeguro()`, que é o código que o undici executa de verdade ao abrir o socket. Resultado: a segurança estava correta, os testes verdes, e a funcionalidade "buscar logo no site" morta por 2 dias. A pergunta que faltou no review: *"qual botão do app passa por este código, e existe um teste que aperta esse botão?"* — não "existe teste?".
+
+**2. O smoke pós-deploy só perguntava "o cadeado fechou?".** Depois do deploy da auditoria, validamos `admin/metrics → 401`, `mock → 404`, headers do helmet, cookie do PKCE. Nenhuma verificação de "a porta ainda abre". Um único GET no endpoint teria pego na hora.
+
+**3. O E2E era uma casca.** O único teste criava um orçamento **só com o nome do cliente, sem itens** — por isso um bug no formatador de quantidade (tipo do DTO mentia: API manda `number`, tipo dizia `string`, código fazia `.trim()`) sobreviveu 4 dias. E2E que não usa DADOS REALISTAS não exercita nada.
+
+**4. (o pior) O CI mentia sobre o deploy.** O job `deploy-backend.yml` dava `success` quando o Coolify apenas **aceitava** o pedido de deploy. Um build falhou no Coolify e o GitHub mostrou verde — o fix ficou fora do ar sem ninguém saber. Esperar `/health` responder também NÃO basta: o container antigo continua de pé durante o build, então um smoke logo após o "finished" fala com a versão VELHA e dá vermelho enganoso (aconteceu, 2 segundos depois).
+
+**Template impact (aplicado no Molde nesta data):**
+- `/health` passa a publicar `versao` (de `backend/package.json`) e `commit` (`SOURCE_COMMIT`, injetado pelo Coolify). Sem isso não há como saber se a build nova está atendendo.
+- `deploy-backend.yml` ganha dois passos depois do trigger: **esperar a versão nova atender** (compara commit/versão do `/health`, até 10 min) e **rodar o smoke**. O job fica vermelho quando a funcionalidade quebrou — que era o objetivo do CI desde sempre.
+- `scripts/smoke-producao.mjs`: esqueleto de smoke de FUNCIONALIDADE (não de controles de segurança), rodável à mão (`npm run smoke:prod`) e no deploy. Regra ao escrever: cada verificação exercita um caminho que um usuário percorre, com dados realistas, e confere o RESULTADO (não só o status HTTP — ex.: o PDF começa com `%PDF`, o número salvo volta igual).
+- Teste que garante `backend/package.json` e a raiz com a mesma versão (senão o CI espera uma versão que nunca chega).
+
+**Regra para agentes (também em AGENTS.md):** toda mudança significativa — hardening, refactor, troca de biblioteca — só está pronta quando existe um teste que exercita o CAMINHO REAL do usuário afetado, e o smoke de produção cobre a funcionalidade. "Os testes passaram" não é evidência; "este botão foi apertado e devolveu o resultado certo" é.

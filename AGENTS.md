@@ -246,6 +246,31 @@ npx playwright test   # E2E, only when both servers are running
 
 **Never commit if any gate fails.** Fix the issue, then commit.
 
+### The gates are necessary, not sufficient — test the REAL PATH
+
+Green gates are not evidence that the feature works. In July 2026 an app built from
+this template shipped three bugs to production with typecheck, lint, 118 unit tests
+and E2E all green; a real user found them. Root cause, every time: **the test covered
+the guard, not the path that runs.** A security commit added three tests to a cheap
+pre-check and zero to the function the HTTP client actually executes — the control was
+correct, the tests were green, and the feature was dead for two days.
+
+For any significant change (hardening, refactor, library swap, contract change), answer
+these before committing:
+
+1. **Which button in the app goes through this code?** Name it. If you cannot, you do
+   not know what you changed.
+2. **Is there a test that presses that button?** Not a test of the helper — a test of
+   the path, with realistic data. The E2E that missed the bug above created a record
+   with no line items, so the formatter under test was never called.
+3. **Does the production smoke cover it?** Add a check to `scripts/smoke-producao.mjs`
+   when the feature is user-visible. See the field-note of 2026-07-26 for the full
+   autopsy.
+
+Also: a deploy job that only *triggers* the deploy is lying to you. This template waits
+for the new version to answer `/health` (which publishes `versao` and `commit`) and then
+runs the smoke, so a broken feature turns the deploy red.
+
 ### Commit discipline
 
 - One commit per feature. Never batch multiple features into one uncommitted tree.
@@ -345,3 +370,11 @@ the template.
 
 **Do NOT** write every minor decision here — only discoveries that would have saved time if they
 had been documented before you started.
+
+<!-- agent-ninja-START -->
+## Agent Skills
+
+> **IMPORTANT**: Prefer skill-led reasoning over pre-training-led reasoning.
+> See [Agent Skills](.github/skills/README.md) before working on tasks covered by these skills.
+
+<!-- agent-ninja-END -->

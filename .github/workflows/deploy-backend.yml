@@ -68,3 +68,54 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             "${API_URL}${DEPLOY_PATH}"
           echo "Coolify redeploy triggered (via origin) for ${{ github.repository }} @ ${{ github.sha }}"
+
+      # Até 2026-07-26 o job terminava no passo acima: "success" queria dizer só
+      # que o Coolify ACEITOU o pedido de deploy. Um build falhou lá e o GitHub
+      # mostrou verde — o fix ficou fora do ar sem ninguém saber. Esperar
+      # /health responder também não basta: o container ANTIGO segue de pé
+      # durante o build. Por isso esperamos a VERSÃO nova atender antes de
+      # testar. Ver field-note "testes verdes não provam nada se cobrem o guard".
+      - name: Baixar o repo (o smoke roda a partir dele)
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/checkout@v4
+
+      - name: Aguardar a versão NOVA atender
+        if: steps.check.outputs.configured == 'true'
+        env:
+          API_PUBLICA: ${{ secrets.API_PUBLIC_URL }}
+        run: |
+          if [ -z "$API_PUBLICA" ]; then
+            echo "::notice::API_PUBLIC_URL não configurado — pulando a verificação pós-deploy."
+            exit 0
+          fi
+          COMMIT_ESPERADO="${GITHUB_SHA:0:7}"
+          VERSAO_ESPERADA="$(node -p "require('./backend/package.json').version")"
+          echo "esperando commit=$COMMIT_ESPERADO ou versao=$VERSAO_ESPERADA em $API_PUBLICA"
+          for i in $(seq 1 40); do
+            CORPO="$(curl -sf --max-time 10 "$API_PUBLICA/health" || echo '{}')"
+            COMMIT_NO_AR="$(node -p "JSON.parse(process.argv[1]).commit || ''" "$CORPO" 2>/dev/null || echo '')"
+            VERSAO_NO_AR="$(node -p "JSON.parse(process.argv[1]).versao || ''" "$CORPO" 2>/dev/null || echo '')"
+            if [ -n "$COMMIT_NO_AR" ] && [ "$COMMIT_NO_AR" = "$COMMIT_ESPERADO" ]; then
+              echo "commit $COMMIT_ESPERADO no ar (tentativa $i)"; exit 0
+            fi
+            if [ -z "$COMMIT_NO_AR" ] && [ "$VERSAO_NO_AR" = "$VERSAO_ESPERADA" ]; then
+              echo "versão $VERSAO_ESPERADA no ar (tentativa $i; sem SOURCE_COMMIT)"; exit 0
+            fi
+            echo "tentativa $i — no ar: commit=[$COMMIT_NO_AR] versao=[$VERSAO_NO_AR]"
+            sleep 15
+          done
+          echo "::error::A versão nova não entrou no ar em 10 min (o build do Coolify pode ter falhado)."
+          exit 1
+
+      # Smoke de FUNCIONALIDADE (não de controles de segurança). O arquivo nasce
+      # como esqueleto: escreva as verificações do SEU app antes de confiar nele.
+      - name: Smoke das funcionalidades em produção
+        if: steps.check.outputs.configured == 'true'
+        env:
+          API_PUBLICA: ${{ secrets.API_PUBLIC_URL }}
+        run: |
+          if [ -z "$API_PUBLICA" ]; then
+            echo "::notice::API_PUBLIC_URL não configurado — smoke pulado."
+            exit 0
+          fi
+          node scripts/smoke-producao.mjs --api "$API_PUBLICA"

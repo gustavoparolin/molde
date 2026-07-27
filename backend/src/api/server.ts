@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
@@ -42,7 +44,26 @@ server.addHook("onResponse", (request, reply, done) => {
   done();
 });
 
-server.get("/health", async () => ({ status: "ok" }));
+// A VERSÃO e o COMMIT fazem parte do health de propósito: sem eles o CI não tem
+// como saber se a build nova já está atendendo, e um smoke pós-deploy pode
+// conversar com o container ANTIGO (que segue de pé durante o build) e dar um
+// vermelho enganoso. Ver field-note 2026-07-26 "testes verdes não provam nada".
+// A versão vem do package.json do backend (em produção o processo sobe por
+// `node`, não por script do npm, então `npm_package_version` não existe).
+const VERSAO_APP = (() => {
+  try {
+    const caminho = join(import.meta.dirname, "..", "..", "package.json");
+    return (JSON.parse(readFileSync(caminho, "utf-8")) as { version?: string }).version ?? "?";
+  } catch {
+    return "?";
+  }
+})();
+
+server.get("/health", async () => ({
+  status: "ok",
+  versao: VERSAO_APP,
+  commit: process.env.SOURCE_COMMIT?.slice(0, 7) ?? null,
+}));
 server.get("/admin/metrics", async () => ({ metrics: getMetricsSummary() }));
 
 const port = Number(process.env.PORT ?? 3000);
