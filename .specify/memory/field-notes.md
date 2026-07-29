@@ -827,3 +827,32 @@ Em 4 dias, 3 bugs chegaram em produção com typecheck, lint, 118 testes e E2E *
 - Teste que garante `backend/package.json` e a raiz com a mesma versão (senão o CI espera uma versão que nunca chega).
 
 **Regra para agentes (também em AGENTS.md):** toda mudança significativa — hardening, refactor, troca de biblioteca — só está pronta quando existe um teste que exercita o CAMINHO REAL do usuário afetado, e o smoke de produção cobre a funcionalidade. "Os testes passaram" não é evidência; "este botão foi apertado e devolveu o resultado certo" é.
+
+---
+
+## [2026-07-29] cota4 — infra: o default de IA do Molde estava MORTO, e a Z.AI perdeu a visão gratuita que era a razão de ele existir
+**Severity:** HIGH
+**Status:** `noted`
+
+`provision.ps1:178-181` injeta `AI_API_KEY` + `AI_BASE_URL` + `AI_MODEL` do `~/.config/molde/provision.env` em **todo app novo** assim que `AI_API_KEY` existe — nem precisa passar `-EnableAI`. O valor que estava lá era `glm-4v-flash` (Z.AI/bigmodel.cn). Auditado com chamadas reais hoje: `POST /api/paas/v4/chat/completions` com esse modelo responde **HTTP 400 code 1211 "模型不存在"** (o modelo não existe). O field-notes de 2026-07-19 já suspeitava disso; agora está confirmado com resposta do servidor. Ou seja, qualquer app provisionado desde então nasceu com IA quebrada por herança, e o erro só apareceria na primeira chamada real — nunca em teste com mock.
+
+Varredura de modelos na mesma conta (o que responde hoje): `glm-4.7-flash` → 200 em 5,5 s; `glm-4.5-flash` → 200 em 6,8 s; `glm-4-flash`, `glm-4v`, `glm-4v-plus`, `glm-4v-plus-0111`, `glm-4v-flash-250414`, `glm-4.1v-9b-thinking`, `glm-4.1v-thinking-flash` → todos 400/1211 mortos; `glm-4.5v`, `glm-4.6v`, `glm-z1-flash` → **HTTP 429 code 1113 "余额不足"** (saldo insuficiente — existem, mas são pagos).
+
+**O achado que muda decisão de arquitetura:** a Z.AI não tem mais nenhum modelo de **visão** gratuito nesta conta. O default do Molde existia exatamente pela cota grátis de visão do `glm-4v-flash`, e essa razão acabou — os modelos de visão vivos cobram. Confirmado por outro caminho: `glm-4.7-flash` recusa conteúdo multimodal com 400 code 1210 `"messages.content.type 参数非法, 取值范围 ['text']"`. Portanto app novo que precise de FOTO/OCR **não pode herdar o default** — precisa de Gemini, que é o único caminho grátis com visão validado nesta stack.
+
+Corrigido no `provision.env` (fora do repo): `AI_MODEL=glm-4.7-flash`, com a auditoria inteira registrada em comentário na própria seção, incluindo a regra "app de texto pode herdar; app de foto configura Gemini".
+
+**Segundo achado, sobre como se testa chave de IA:** `GET /v1beta/models?key=<K>` do Gemini responde **200 mesmo com a cota diária estourada** — ele prova que a chave existe, não que ela produz. O teste que vale é uma geração real (`:generateContent` com `maxOutputTokens: 5`), que custa quase nada. Vale para qualquer provedor: chave que autentica ≠ chave que produz.
+
+**Terceiro achado, diagnóstico de token da Cloudflare:** `GET /client/v4/user/tokens/verify` responde `{"success":false,"code":1000,"message":"Invalid API Token"}` para o token de provisionamento — e o token funciona perfeitamente. É token de **conta**, e aquele endpoint só valida token de **usuário**. O smoke test correto é `GET /client/v4/zones`. Sem saber disso, o próximo diagnóstico conclui "chave morta" e sai rotacionando o que está bom.
+
+**Template impact:** (1) `provision.ps1` não deveria injetar IA por inércia — o bloco `if ($EnableAI -or $cfg["AI_API_KEY"])` faz com que a mera presença da chave no cofre configure IA em apps que não pediram; considerar exigir `-EnableAI` explícito. (2) O provision deveria fazer **uma chamada real ao modelo** antes de gravar o env, e falhar alto se o modelo não existir — o custo é uma requisição e evita nascer quebrado. (3) `molde-brain.md` §Providers precisa registrar que a Z.AI saiu da lista de opções gratuitas de visão. (4) O README do Molde documenta `COOLIFY_API_URL=https://coolify.parolin.net/api/v1`, mas os scripts concatenam `/api/v1` — o README está errado e induz erro em setup novo.
+
+
+## [2026-07-29] coringao-orcamento — infra: version-gate do deploy-backend.yml também leva o Managed Challenge do Cloudflare — deploy OK marcado como falha
+**Severity:** HIGH
+**Status:** `noted`
+
+O fix de 2026-07-20 protegeu só o passo que DISPARA o deploy (fallback via origem com `--resolve`). O passo seguinte — "Aguardar a versão NOVA atender", que faz poll do `/health` até a versão nova aparecer — continua indo pela borda do Cloudflare, e o runner do GitHub levou o Managed Challenge: 40 tentativas com `commit=[] versao=[]` (o challenge devolve HTML, o jq extrai vazio) e a run terminou em `##[error]A versão nova não entrou no ar em 10 min`, **com o deploy real concluído e o `/health` respondendo a versão nova** para qualquer outro cliente. Falso negativo: o gate criado para "o deploy não mentir" mentiu ao contrário.
+
+**Template impact:** em `deploy-backend.yml`, o poll do `/health` deve usar o mesmo fallback do disparo (tentar via Cloudflare; em resposta sem os campos esperados, repetir via `curl --resolve <host>:443:$COOLIFY_ORIGIN_IP -k`). Alternativa: detectar HTML/challenge na resposta e avisar "runner bloqueado pela WAF" em vez de "build falhou" — a mensagem de erro atual aponta o suspeito errado.

@@ -173,10 +173,56 @@ if ($EnableR2) {
   $envs["S3_REGION"]           = "auto"
   $envs["S3_FORCE_PATH_STYLE"] = "true"
 }
-if ($EnableAI -or $cfg["AI_API_KEY"]) {
-  $envs["AI_API_KEY"]  = Req "AI_API_KEY"
-  $envs["AI_BASE_URL"] = if ($cfg["AI_BASE_URL"]) { $cfg["AI_BASE_URL"] } else { "https://open.bigmodel.cn/api/paas/v4" }
-  $envs["AI_MODEL"]    = if ($cfg["AI_MODEL"]) { $cfg["AI_MODEL"] } else { "glm-4v-flash" }
+# ── IA: a mesma cadeia em todo app da stack (decisão do Gustavo, 2026-07-29) ──
+# Gemini (pool de chaves) -> Ollama do Mac Studio -> Poe. O código que consome
+# esta configuracao esta em backend/src/services/cadeiaIa.ts (no template).
+#
+# EXIGE -EnableAI EXPLICITO. Antes bastava a chave existir no cofre para todo app
+# novo nascer com IA configurada, e foi assim que parafit e parafin herdaram um
+# modelo MORTO (glm-4v-flash, 400 code 1211) sem ninguem perceber: o erro so
+# apareceria na primeira chamada real, e teste com mock nao pega modelo morto.
+if ($EnableAI) {
+  # Pool do Gemini: GEMINI_API_KEY_1..N do cofre, juntas por virgula. A cota do
+  # free tier e DIARIA e por PROJETO do Google, entao uma chave por conta Google
+  # multiplica a cota. cadeiaIa.ts tenta uma a uma e abandona na hora a que
+  # responder 429 de cota.
+  $geminiKeys = @()
+  foreach ($k in ($cfg.Keys | Where-Object { $_ -match '^GEMINI_API_KEY_\d+$' } | Sort-Object { [int]($_ -split '_')[-1] })) {
+    if ($cfg[$k]) { $geminiKeys += $cfg[$k] }
+  }
+  if (-not $geminiKeys -and $cfg["GEMINI_API_KEY"]) { $geminiKeys = @($cfg["GEMINI_API_KEY"]) }
+  if (-not $geminiKeys) { throw "provision.env missing GEMINI_API_KEY_1 (pool do Gemini) — necessario com -EnableAI" }
+
+  $envs["AI_API_KEY"]          = ($geminiKeys -join ",")
+  $envs["AI_BASE_URL"]         = if ($cfg["GEMINI_BASE_URL"]) { $cfg["GEMINI_BASE_URL"] } else { "https://generativelanguage.googleapis.com/v1beta/openai/" }
+  $envs["AI_MODEL"]            = if ($cfg["GEMINI_MODEL"]) { $cfg["GEMINI_MODEL"] } else { "gemini-3.6-flash" }
+  # Modelo alternativo do MESMO provedor: numa falha transitoria o retry troca de
+  # fila, que foi o que resolveu o 503 "high demand" persistente de 2026-07-27.
+  $envs["AI_MODEL_FALLBACK"]   = if ($cfg["GEMINI_MODEL_FALLBACK"]) { $cfg["GEMINI_MODEL_FALLBACK"] } else { "gemini-3.5-flash-lite" }
+  $envs["AI_CLOUD_TIMEOUT_MS"] = "240000"
+
+  # Ollama do Mac Studio (alcancado pela VPS via Tailscale). Ultimo recurso
+  # gratuito; Mac desligado nao quebra nada. AI_LOCAL_MODEL_VISAO e obrigatorio
+  # para o caminho da FOTO — imagem em modelo de texto nao da erro, ele responde
+  # qualquer coisa.
+  if ($cfg["AI_LOCAL_BASE_URL"]) {
+    $envs["AI_LOCAL_BASE_URL"]   = $cfg["AI_LOCAL_BASE_URL"]
+    $envs["AI_LOCAL_MODEL"]      = if ($cfg["AI_LOCAL_MODEL"]) { $cfg["AI_LOCAL_MODEL"] } else { "qwen3.6:latest" }
+    if ($cfg["AI_LOCAL_MODEL_VISAO"]) { $envs["AI_LOCAL_MODEL_VISAO"] = $cfg["AI_LOCAL_MODEL_VISAO"] }
+    $envs["AI_LOCAL_TIMEOUT_MS"] = "90000"
+  }
+
+  # Poe: rapido (~2 s) e paga a assinatura do Gustavo, por isso e o ultimo da fila.
+  if ($cfg["POE_API_KEY"]) {
+    $envs["POE_API_KEY"]        = $cfg["POE_API_KEY"]
+    $envs["POE_MODEL"]          = if ($cfg["POE_MODEL"]) { $cfg["POE_MODEL"] } else { "gpt-5.4-mini" }
+    $envs["POE_MODEL_FALLBACK"] = if ($cfg["POE_MODEL_FALLBACK"]) { $cfg["POE_MODEL_FALLBACK"] } else { "claude-haiku-4.5" }
+  }
+
+  Write-Host ("→ IA: {0} chave(s) do Gemini, modelo {1}" -f $geminiKeys.Count, $envs["AI_MODEL"]) -ForegroundColor Yellow
+}
+elseif ($cfg["AI_API_KEY"]) {
+  Write-Host "→ [aviso] provision.env tem AI_API_KEY, mas -EnableAI nao foi passado: nenhuma env de IA sera criada." -ForegroundColor DarkYellow
 }
 if ($AllowedEmails) {
   # App-specific access control — NOT a shared infra credential, so it never lives in
