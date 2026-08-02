@@ -38,7 +38,7 @@ Do not start specifying or coding until you understand the full brief and the in
 | `.brief/inspiration/` | Reference screenshots. UI must echo these visually. |
 | `.brief/stack.md` | Stack overrides (domain, R2, AI, infra notes). |
 | `.brief/notes.md` | Freeform notes from the user. |
-| `.brief/todo.md` | **The single pending-steps queue between Gustavo and the agent.** Only what remains to be done — never history (done work goes to CHANGELOG/Brain). Terse on why, extremely detailed on how: exact page link as `[label](url)`, navigation `a > b > c`, field value from → to, button to click, all in bullets. Questions get a `**Resposta:**` line; "processar todo" = apply answers, execute the agent's items, delete what's resolved. If the file is missing in a derived app, create it from this template's `.brief/todo.md`. |
+| `.brief/todo.md` | **The single pending-steps queue between Gustavo and the agent.** Only what remains to be done — never history (done work goes to CHANGELOG/Brain). Terse on why, extremely detailed on how: exact page link as `[label](url)`, navigation `a > b > c`, field value from → to, button to click, all in bullets. Questions get a `**Resposta:**` line; "processar todo" = apply answers, execute the agent's items, delete what's resolved. Two fixed sections: **🔗 Ferramentas e URLs** at the top (Gustavo's bookmark — keep it current, add new URLs as they appear) and **NOTAS** at the bottom (his free-form inbox: EVERY time you read this file, interpret the notes, create TODO items as needed, execute what's yours, then clear them). If the file is missing in a derived app, create it from this template's `.brief/todo.md`. |
 
 ---
 
