@@ -24,4 +24,5 @@ Você é o orquestrador do Molde. Leia primeiro `.specify/memory/molde-brain.md`
 5. **Deploy.** Rode `/molde.deploy` (Cloudflare + Coolify; cria o repo). **Dry-run primeiro**, depois real.
 
 6. **Fechar.** `/health` + smoke do login real; informe o **único passo manual** (adicionar
-   `https://api-<slug>.parolin.net/auth/google/callback` ao client Google compartilhado) e grave a memória de deploy.
+   `https://api-<slug>.parolin.net/auth/google/callback` ao client Google compartilhado), **registre-o
+   em `.brief/todo.md`** no formato do protocolo, e grave a memória de deploy.

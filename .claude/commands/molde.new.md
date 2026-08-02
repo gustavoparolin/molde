@@ -24,5 +24,6 @@ Você é o orquestrador do Molde. Leia primeiro `.specify/memory/molde-brain.md`
    primeiro**, depois real.
 
 6. **Fechar.** Cheque `/health`, smoke do login real, e diga ao usuário o **único passo manual**:
-   adicionar `https://api-<slug>.parolin.net/auth/google/callback` ao client Google compartilhado.
+   adicionar `https://api-<slug>.parolin.net/auth/google/callback` ao client Google compartilhado —
+   e **registre esse passo em `.brief/todo.md`** no formato do protocolo (o arquivo já veio na cópia).
    Grave uma memória de deploy com domínios + UUIDs.
