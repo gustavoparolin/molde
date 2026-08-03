@@ -856,3 +856,126 @@ Corrigido no `provision.env` (fora do repo): `AI_MODEL=glm-4.7-flash`, com a aud
 O fix de 2026-07-20 protegeu só o passo que DISPARA o deploy (fallback via origem com `--resolve`). O passo seguinte — "Aguardar a versão NOVA atender", que faz poll do `/health` até a versão nova aparecer — continua indo pela borda do Cloudflare, e o runner do GitHub levou o Managed Challenge: 40 tentativas com `commit=[] versao=[]` (o challenge devolve HTML, o jq extrai vazio) e a run terminou em `##[error]A versão nova não entrou no ar em 10 min`, **com o deploy real concluído e o `/health` respondendo a versão nova** para qualquer outro cliente. Falso negativo: o gate criado para "o deploy não mentir" mentiu ao contrário.
 
 **Template impact:** em `deploy-backend.yml`, o poll do `/health` deve usar o mesmo fallback do disparo (tentar via Cloudflare; em resposta sem os campos esperados, repetir via `curl --resolve <host>:443:$COOLIFY_ORIGIN_IP -k`). Alternativa: detectar HTML/challenge na resposta e avisar "runner bloqueado pela WAF" em vez de "build falhou" — a mensagem de erro atual aponta o suspeito errado.
+
+## [2026-07-30] parafin — dx: hook agent-context do spec-kit falha silencioso sem PyYAML no Python do sistema
+**Severity:** LOW
+**Status:** `noted`
+
+Ao rodar o fluxo spec-kit no Parafin (feature 004), o hook `after_specify`/`after_plan` da extensão agent-context (`update-agent-context.ps1`) abortou com "PyYAML is required to parse extension config; cannot update context" — o script PowerShell delega o parse do YAML a Python e a máquina não tem PyYAML global. O hook é opcional e falha com aviso, então o fluxo segue, mas o bloco `<!-- SPECKIT START/END -->` do CLAUDE.md fica apontando para o plano da feature ANTERIOR — contexto errado para qualquer agente que confie nele. Contorno: editar o bloco à mão (é uma linha). No mesmo fluxo também notei que `.specify/scripts/` não existe nos apps derivados (só `templates/`) — os comandos `setup-plan.ps1`/`check-prerequisites.ps1` citados pelos skills speckit não estão lá; o agente precisa fazer o setup manualmente.
+
+**Template impact:** ou (a) remover a dependência de Python do script da extensão agent-context (parse do YAML simples em PowerShell puro resolve — o config tem 3 chaves), ou (b) documentar `pip install pyyaml` como pré-requisito de máquina no README do Molde; e decidir se `.specify/scripts/` deve ser incluído no esqueleto.
+
+## [2026-08-01] parafin — gotcha: DELETE + INSERT no mesmo statement (CTE) do Postgres não se enxergam
+**Severity:** HIGH
+**Status:** `noted`
+
+Migration que trocava participações de uma conta fazia `WITH apaga AS (DELETE ... RETURNING ...) INSERT ... ON CONFLICT DO NOTHING` num único statement. No Postgres, todo DML dentro de CTEs vê o snapshot do INÍCIO do statement — o INSERT não enxerga o DELETE, então o `ON CONFLICT` colidiu com a linha "já apagada" e engoliu silenciosamente uma das inserções (a conta 50/50 ficou só com um membro em 50%). Só foi pego porque a migration foi ENSAIADA num cluster com dados reais antes do deploy. Fix: DELETE e INSERT em statements separados (a migration inteira continua atômica — Prisma roda cada arquivo numa transação).
+
+**Template impact:** anotar no playbook de migrations do Molde: nunca combinar DML dependente em CTE única; e manter o ritual de ensaiar migration de dados em cluster efêmero antes do deploy — este bug não aparece em teste com mock.
+
+## [2026-08-01] parafin — infra: Windows passou a bloquear bind numa porta que funcionava no dia anterior (cluster Postgres efêmero)
+**Severity:** LOW
+**Status:** `noted`
+
+`pg_ctl start` do cluster efêmero (porta 5433) começou a falhar com `could not bind IPv4 address "127.0.0.1": Permission denied` — mesmo fora de sandbox, com a porta livre no netstat e SEM constar em `netsh interface ipv4 show excludedportrange protocol=tcp`. Tinha funcionado na véspera; provável reserva dinâmica (Hyper-V) após reboot. Não vale diagnosticar: trocar a porta (`pg_ctl -o "-p 5544"`) resolveu na hora.
+
+**Template impact:** no runbook de validação com Postgres efêmero, tratar a porta como descartável — se o bind falhar com Permission denied, incrementar a porta e seguir.
+
+## [2026-08-01] parafin — gotcha: Playwright getByRole({ name }) casa por SUBSTRING — botão "editar" colide com "Editar Conta X"
+**Severity:** LOW
+**Status:** `noted`
+
+O matching de nome acessível do Playwright é case-insensitive e por substring por padrão. Ao adicionar um botão `aria-label="Editar BMO Mastercard"` num card que já tinha um botão "editar" (participações), o locator `getByRole("button", { name: "editar" })` passou a resolver 2 elementos e o teste quebrou por strict mode. Idem para Mantine Select/ColorInput: o aria-label vai para o input E para o listbox — usar `getByRole("textbox", { name })` em vez de `getByLabel`. Fix: `{ exact: true }` nos nomes curtos e role específico nos inputs Mantine.
+
+**Template impact:** nota curta no guia de E2E do Molde (seção Playwright + Mantine).
+
+---
+
+## [2026-08-02] parafin — gotcha: `process.loadEnvFile` NÃO sobrescreve variável já no shell, e a guarda usual falha justo no caso perigoso
+**Severity:** CRITICAL
+**Status:** `noted`
+
+Todo script de manutenção do Parafin abria com o mesmo bloco: `process.loadEnvFile('../../.env')` seguido de `if (!process.env.DATABASE_URL) process.exit(1)`. Parecia proteção; não é. O `loadEnvFile` do Node só define o que ainda não existe no ambiente — verificado rodando `FOO=do_shell node -e "process.loadEnvFile('t.env')"`, que devolve `do_shell` mesmo com o arquivo dizendo outra coisa. Logo, com um `DATABASE_URL` de produção exportado no shell (fácil: o próprio `db-backup.ts` documentava `DATABASE_URL=<prod> npm run db:backup` como receita), o `.env` local era ignorado em silêncio e o script gravava em PRODUÇÃO — imprimindo exatamente a mesma saída que imprimiria localmente. Nenhum dos 13 scripts dizia em que banco ia escrever.
+
+A correção foi um `assertBancoAlvo()` compartilhado que (1) **sempre** imprime `banco@host` antes de qualquer escrita — sem isso nenhuma checagem salva quem não olha — e (2) recusa alvo não-local sem `--producao-eu-sei`, com mensagem que nomeia a causa provável (`echo $DATABASE_URL`). Simulação (`--listar`/`--dry-run`) e scripts de leitura passam direto, para não atrapalhar conferir produção antes de agir.
+
+**Template impact:** o Molde deveria nascer com esse helper em `backend/scripts/bancoAlvo.ts` e o bloco de abertura padrão dos scripts chamando-o. Vale também revisar qualquer doc do template que ensine o padrão `DATABASE_URL=<prod> npm run <script>` — ele é a origem do acidente.
+
+---
+
+## [2026-08-02] parafin — gotcha: `pg_dump` do Windows (PG18) gera dump que o `pg_restore` do container (PG16) não lê
+**Severity:** HIGH
+**Status:** `noted`
+
+Ao sobrescrever produção com o banco local, o `pg_restore` dentro do container falhou em `unsupported version (1.16) in file header` — o formato custom (`-Fc`) do PG18 não é retrocompatível. A falha acontece na leitura do cabeçalho, então **nada foi tocado**, o que salvou a operação.
+
+Caminho que funcionou: `pg_dump -Fp` (SQL puro) + filtrar `SET transaction_timeout = 0;`, que o PG16 não conhece e faz o `psql` abortar linha a linha. Segunda armadilha na sequência: `--clean` em SQL puro erra a ordem de `DROP` quando há FK — o `PluggyItem` não caiu e a carga estourou com chave duplicada. Não houve dano porque as linhas já eram idênticas, mas o certo é `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` antes de restaurar.
+
+**Template impact:** documentar no runbook de restore do Molde que a versão do `pg_dump` da máquina precisa ser ≤ a do servidor, e oferecer a receita SQL-puro como caminho padrão em Windows (onde o PG local costuma ser mais novo que o container).
+
+---
+
+## [2026-08-02] parafin — bug: upsert de sync que compara só os campos "de negócio" nunca preenche campo novo em linha antiga
+**Severity:** HIGH
+**Status:** `noted`
+
+O `upsertPluggyTransactions` decidia gravar comparando `valorCad`, `descricao`, `dataTransacao` e `tipo`. Quando o código ganhou campos de metadado (parcela, id da fatura), o dado já estava no banco: `mudou` dava `false`, o loop pulava, e **nenhuma re-sincronização preenchia**. Resultado medido: `parcelaNumero` nulo em 3.434 de 3.434 transações, apesar de a fonte mandar `creditCardMetadata` em 100% das transações de cartão do dump.
+
+O sintoma é traiçoeiro porque o caminho de escrita está correto e o mapper também — só a condição de guarda está incompleta. Vale para qualquer campo que se adicione no futuro.
+
+**Template impact:** em qualquer upsert idempotente do template, a comparação de mudança deve cobrir **todos** os campos que a fonte fornece, não só os principais. Alternativa mais robusta: comparar um hash do payload normalizado em vez de campo a campo.
+
+---
+
+## [2026-08-02] parafin — gotcha: sync que grava saldo sem olhar a data da apuração faz backfill antigo rebaixar o valor atual
+**Severity:** HIGH
+**Status:** `noted`
+
+`garantirContaDoSync` gravava `saldo` incondicionalmente e carimbava `saldoEm` com `new Date()`. Ao rodar um backfill a partir de dumps de três dias antes, o saldo de uma conta voltou de R$ 2.908,28 (apurado no dia anterior) para R$ 6.931,51 (valor do dump) — e o carimbo dizia "agora", então a tela mostrava um número velho com cara de recém-apurado. Só foi percebido porque o valor destoava do que o usuário via no banco.
+
+Correção: a fonte passa `apuradoEm` (o `updatedAt` da conta na Pluggy) e o sync **ignora** a atualização quando o `saldoEm` gravado é mais recente.
+
+**Template impact:** todo campo "último valor conhecido" (saldo, cotação, posição) precisa carregar a data em que a FONTE o apurou, e a escrita precisa ser monotônica nessa data. Carimbar com `now()` no momento da gravação é o erro — ele destrói justamente a informação que permitiria detectar a regressão.
+
+---
+
+## [2026-08-02] parafin — pattern: antes de sobrescrever produção, diferenciar por `id` — contagem não basta
+**Severity:** HIGH
+**Status:** `noted`
+
+Na primeira sincronização "local sobrescreve produção", produção tinha 3.426 transações e o local 3.431. A tentação é concluir que o local está à frente. Estava errado: **três** linhas existiam só em produção (o sync diário roda lá às 06:00 e escreve), e duas delas eram justamente as que o usuário esperava havia dias. Um restore direto as teria apagado sem deixar rastro.
+
+O que funcionou: extrair a lista de `id` dos dois lados e comparar conjuntos. Virou `npm run prod:diff`, que recusa dizer "pode sobrescrever" enquanto a lista "só em produção" não estiver vazia.
+
+**Template impact:** o runbook de "promover local para produção" do Molde deveria ter esse passo como obrigatório e nomeado, não como conferência mental. Vale para qualquer app cujo ambiente de produção tenha escrita própria (sync, webhook, cron).
+
+## Frontend apontando para o backend de OUTRO app na mesma máquina
+
+status: noted
+data: 2026-08-02
+app: Parafin
+
+Quando a porta padrão do backend (3000) já está tomada por outro app derivado do Molde, a
+saída natural é subir o backend em outra porta. O erro é parar por aí: se o
+`VITE_API_BASE_URL` não for movido junto, o frontend passa a conversar com o backend do
+OUTRO app — que responde `/health` com 200 (rota do esqueleto, igual nos dois) e 404 em
+todas as rotas de domínio.
+
+O sintoma engana: todas as telas ficam vazias e o usuário reporta "o banco de dados local
+parou de funcionar". O banco está intacto; ninguém está perguntando nada a ele.
+
+O que torna o diagnóstico lento é o `/health` responder 200 nos dois apps. Checar saúde
+pela rota do esqueleto não distingue um app do outro — o teste que separa é pedir uma rota
+de DOMÍNIO (`/transactions`, `/orcamentos`) e ver se ela existe.
+
+Prevenção: manter `PORT` e `VITE_API_BASE_URL` no mesmo `.env`, com o mesmo número, e
+documentar as portas do app no `.brief/todo.md`. Vale também não deixar a porta padrão do
+template no `.env` de um app que sabidamente a divide com outro.
+
+## [2026-08-03] cota4 — dx: Impeccable (skill de design para agentes) instalado e pilotado — vale adotar no template
+**Severity:** LOW
+**Status:** `fixed-in-template`
+
+O Cota4 instalou o [Impeccable](https://impeccable.style) (open source, Apache 2.0, `npx impeccable install`, Node 22.12+) e pilotou no workspace `site/`. O que ele entrega: 23 comandos de design com vocabulário preciso (`/impeccable audit`, `distill`, `quieter`, `harden`, `clarify`…), um detector determinístico de anti-padrões de UI gerada por IA (`npx impeccable detect src/`, encaixável em CI) e dois arquivos de contexto que o agente lê antes de mexer em UI (`PRODUCT.md` = verdade do produto, `DESIGN.md` = tokens/mundo visual). Resultado do piloto: detector achou só 1 aviso (fonte Inter "batida" — vencido pelo manual da marca, e a regra do próprio Impeccable diz que o brief pinado vence o aviso); audit deu 17/20 com achados reais e acionáveis (contraste borderline de chips, kill global de 0.01ms no prefers-reduced-motion, webm sem fallback mp4/poster, og:image em proporção errada, Google Fonts de terceiro num site que promete "sem rastreadores"). Custos/pegadinhas: (1) o instalador detecta harnesses e escreve em `.claude/` E `.github/` — num monorepo ele resolve o app-alvo por cwd (`context.mjs` pede para rodar do diretório do child app); (2) o `PRODUCT.md`/`DESIGN.md` vão na RAIZ do app (sem opção de `.brief/`); (3) o init exige uma rodada de entrevista com o usuário (AskUserQuestion) antes de gravar o PRODUCT.md — não é 100% autônomo por design.
+
+**Template impact:** **ADOTADO em 2026-08-03** (decisão do Gustavo no mesmo dia do piloto): Impeccable v3.5.0 instalado no template (`.claude/skills/impeccable/` + `.github/skills/impeccable/`), fluxo documentado no `AGENTS.md` §6.5 (PRODUCT.md antes de UI substancial, detector após edições de UI, comandos que casam com o gosto anti-inchaço; flourish só com brief explícito) e passo **4. Design** adicionado ao `molde.new` (Claude e Copilot): `/impeccable init` semeado pelo `idea.md` + `npx impeccable detect frontend/src/` depois das telas. Apps já derivados (cota4 ✅; coringao-orcamento, parafit, parafin, recibos, celula pendentes) instalam manualmente com `npx impeccable install` na raiz.

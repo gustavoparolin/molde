@@ -17,13 +17,19 @@ Você é o orquestrador do Molde. Leia primeiro `.specify/memory/molde-brain.md`
    depois `/speckit.plan` → `/speckit.tasks` → `/speckit.implement`. Construa **imitando o slice `Item`**
    (model → repository → service → route → store → page) e a estética das telas-exemplo (Mantine + `theme.ts`).
 
-4. **Validar local.** `cd backend && npx prisma migrate dev --name init`; na raiz `npm run typecheck`;
+4. **Design.** Antes de o `/speckit-implement` tocar UI, rode `/impeccable init` semeando a entrevista
+   com o `idea.md` (pergunte só o que o brief não responde) — isso grava o `PRODUCT.md` na raiz, o
+   contexto que todo trabalho visual futuro lê. Depois de implementar telas, rode
+   `npx impeccable detect frontend/src/` e julgue os achados (compromisso de marca pinado vence aviso
+   de padrão saturado). Ver §6.5 do `AGENTS.md`.
+
+5. **Validar local.** `cd backend && npx prisma migrate dev --name init`; na raiz `npm run typecheck`;
    smoke (login mock + 1 CRUD da entidade principal).
 
-5. **Deploy.** Rode `/molde.deploy` (provisiona Cloudflare + Coolify; cria o repo `gh`). Faça **dry-run
+6. **Deploy.** Rode `/molde.deploy` (provisiona Cloudflare + Coolify; cria o repo `gh`). Faça **dry-run
    primeiro**, depois real.
 
-6. **Fechar.** Cheque `/health`, smoke do login real, e diga ao usuário o **único passo manual**:
+7. **Fechar.** Cheque `/health`, smoke do login real, e diga ao usuário o **único passo manual**:
    adicionar `https://api-<slug>.parolin.net/auth/google/callback` ao client Google compartilhado —
    e **registre esse passo em `.brief/todo.md`** no formato do protocolo (o arquivo já veio na cópia).
    Grave uma memória de deploy com domínios + UUIDs.
