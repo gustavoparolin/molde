@@ -294,7 +294,7 @@ the container IP.
 | parafit | `eus6e9vzt2v0zssijpjppdrz` | `10.0.2.11` | `parafit` | `postgres` | legacy naming |
 | trajetorias2 | `a7r8osrtc2xxs03tpcbkmw8h` | `10.0.2.6` | `trajetorias2` | `trajetorias2_app` | legacy naming |
 
-> Removed 2026-08-09 (apps decommissioned; containers, DBs and volumes deleted via the Coolify API): `paramalhar` (`py93j9ymwzqdszeq5p2qvxdu`, `10.0.2.8`) and `recibos` (`f13lkyius8n7ctiyksxfhx6u`, `10.0.2.4`). Their local folders were deleted on 2026-08-15. See field-notes `[2026-08-09] recibos + paramalhar — infra: deprovision…` and `[2026-08-15] recibos + paramalhar + mercado + taskly — deprovision, round 2…`.
+> Apps decommissioned 2026-08-09 (`paramalhar` and `recibos`; local folders deleted 2026-08-15). `recibos` DB (`f13lkyius8n7ctiyksxfhx6u`, `10.0.2.4`) is gone. ⚠️ `paramalhar` DB (`postgresql-database-py93j9ymwzqdszeq5p2qvxdu`, `pgvector/pgvector:pg18`, DB `paramalhar` / user `paramalhar_app`, ~11 MB) **survived**: the 2026-08-09 `DELETE /api/v1/databases/{uuid}` answered `deletion request queued` and never executed — found 2026-08-15 still `running:healthy`, backing up daily to R2, and absent from `GET /api/v1/databases` (only `GET /api/v1/databases/py93…` shows it). No app references it. Deletion pending (Gustavo, Coolify UI → Danger Zone, delete volumes). Lesson: after an async delete, poll `GET /databases/{uuid}` until 404 — the list endpoint can hide it. See field-notes `[2026-08-09] recibos + paramalhar — infra: deprovision…` and `[2026-08-15] recibos + paramalhar + mercado + taskly — deprovision, round 2…`.
 
 > **Note:** `coolify-db` (Coolify's own internal Postgres) must never be touched.
 
@@ -315,7 +315,7 @@ the container IP.
 
 ### Cloudflare R2 — media and file storage
 
-- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `cota4-assets`). ⚠️ `paramalhar-assets` outlived its app on purpose: parafit hotlinks the exercise media from its public domain (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`) — do not delete it until parafit has moved the media to `parafit-assets` (`npm run upload:assets` + reseed URLs + `R2_PUBLIC_BASE_URL`).
+- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `cota4-assets`). `paramalhar-assets` outlived its app: parafit hotlinked the exercise media from its public domain (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`) until 2026-08-15, when parafit v0.29.5 moved everything to `parafit-assets` (Coolify env `R2_PUBLIC_BASE_URL`, seeds, data migration `20260815200000_midia_para_parafit_assets`, verified in production). Nothing references the old bucket anymore — safe to delete (pending, Gustavo).
 - Buckets are **private by default** — no public access. Serve files via pre-signed URLs or a Cloudflare
   Worker with access controls.
 - Access from the backend via the standard S3 SDK:
