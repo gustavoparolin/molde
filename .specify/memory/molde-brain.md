@@ -315,7 +315,7 @@ the container IP.
 
 ### Cloudflare R2 — media and file storage
 
-- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `cota4-assets`). `paramalhar-assets` outlived its app: parafit hotlinked the exercise media from its public domain (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`) until 2026-08-15, when parafit v0.29.5 moved everything to `parafit-assets` (Coolify env `R2_PUBLIC_BASE_URL`, seeds, data migration `20260815200000_midia_para_parafit_assets`, verified in production). Nothing references the old bucket anymore — safe to delete (pending, Gustavo).
+- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `cota4-assets`). `paramalhar-assets` outlived its app: parafit hotlinked the exercise media from its public domain (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`) until 2026-08-15, when parafit v0.29.5 moved everything to `parafit-assets` (Coolify env `R2_PUBLIC_BASE_URL`, seeds, data migration `20260815200000_midia_para_parafit_assets`, verified in production). Nothing referenced the old bucket anymore and Gustavo deleted it the same night (2026-08-15) — it no longer exists.
 - Buckets are **private by default** — no public access. Serve files via pre-signed URLs or a Cloudflare
   Worker with access controls.
 - Access from the backend via the standard S3 SDK:
