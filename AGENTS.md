@@ -385,6 +385,8 @@ the template.
 **Do NOT** write every minor decision here — only discoveries that would have saved time if they
 had been documented before you started.
 
+Inspection (Fagan/Scrum) is the protocol that **classifies** findings (`app` | `template` | `stack`) and promotes P0/P1 structural/security into this file in the same act. Skill: [`.github/skills/inspection/SKILL.md`](.github/skills/inspection/SKILL.md). Do not patch sibling repos from the child session — wait for `fixed-in-template`.
+
 <!-- agent-ninja-START -->
 ## Agent Skills
 
