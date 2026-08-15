@@ -26,15 +26,7 @@
 
 </details>
 
-## 🔴 🧑 O Postgres do paramalhar ainda está vivo no Coolify (2ª tentativa de deleção — a 1ª ficou "queued")
-
-Contexto em uma linha: o `DELETE` de 09/08 respondeu "queued" e nunca executou; em 15/08 à noite o Claude conferiu de novo depois do seu "Done": o bucket `paramalhar-assets` sumiu ✅, mas `postgresql-database-py93j9ymwzqdszeq5p2qvxdu` continua `running:healthy`, sem `deleted_at`, container "Up 8 weeks" e volume `postgres-data-py93…` (69 MB) na VPS. Nenhum app aponta para ele (conferido nas envs de todos os seis). Dumps diários continuam indo para `coolify-backups` (o último de hoje).
-
-- [Coolify](https://coolify.parolin.net) > projeto **shared-infra** > ambiente **production** > procurar `postgresql-database-py93j9ymwzqdszeq5p2qvxdu` (se não aparecer na lista do ambiente, abrir direto: `https://coolify.parolin.net/project/e114az5efvjemct7utkrzxvv/production/database/py93j9ymwzqdszeq5p2qvxdu`) > aba **Danger Zone** > **Delete** > marcar *Delete configurations*, *Delete volumes* e *Run docker cleanup* > confirmar.
-- Esperar 1 minuto e conferir que sumiu de verdade: recarregar a página do recurso (tem que dar "não encontrado") e/ou `ssh oracle-vps` → `sudo docker ps -a | grep py93` tem que voltar vazio. Se o container continuar "Up" depois de 5 minutos, o Coolify enfileirou e não executou de novo — aí o caminho é o manual na VPS: `sudo docker stop py93j9ymwzqdszeq5p2qvxdu && sudo docker rm py93j9ymwzqdszeq5p2qvxdu && sudo docker volume rm postgres-data-py93j9ymwzqdszeq5p2qvxdu` (e o recurso morto some do Coolify na próxima varredura, ou apaga-se pelo painel sem volumes).
-- Depois me diga "py93 apagado" que eu confiro pela API e dou baixa aqui e no `molde-brain.md`.
-
-**Resposta:**
+_(vazio — nenhum passo pendente)_
 
 ---
 
