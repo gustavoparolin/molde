@@ -19,8 +19,8 @@ del() { echo "→ DELETE $1"; echo "  $2"; [ $dry -eq 1 ] && return 0
 del "Pages project" "$cf/accounts/$acc/pages/projects/$slug"
 del "R2 bucket"     "$cf/accounts/$acc/r2/buckets/$slug-assets"
 if [ $dry -eq 0 ]; then
-  ids=$(curl -fsS "$cf/zones/$CLOUDFLARE_ZONE_ID/dns_records?name=api-$slug.parolin.net" \
+  ids=$(curl -fsS "$cf/zones/$CLOUDFLARE_ZONE_ID/dns_records?name=$slug-api.parolin.net" \
         -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-  [ -n "${ids:-}" ] && del "DNS api-$slug" "$cf/zones/$CLOUDFLARE_ZONE_ID/dns_records/$ids"
+  [ -n "${ids:-}" ] && del "DNS $slug-api" "$cf/zones/$CLOUDFLARE_ZONE_ID/dns_records/$ids"
 fi
 echo "Coolify app/database: delete via DELETE $COOLIFY_API_URL/applications/<uuid> and /databases/<uuid> after confirming UUIDs."

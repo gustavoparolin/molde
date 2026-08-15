@@ -10,7 +10,7 @@ Fill each `<…>` placeholder with your own values.
 ## Identity & domains
 
 - Frontend domain pattern: `<app>.<your-zone>`        (e.g. `<app>.parolin.net`)
-- API domain pattern:      `api-<app>.<your-zone>`     (e.g. `api-<app>.parolin.net`)
+- API domain pattern:      `<app>-api.<your-zone>`     (e.g. `<app>-api.parolin.net`)
 - Database name pattern:   `<app>`
 
 ## Hosting

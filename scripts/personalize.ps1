@@ -79,4 +79,4 @@ if ((Test-Path $master) -and (Test-Path (Split-Path $briefStack -Parent))) {
 
 Write-Host "`nDone. Next: fill .brief/idea.md + .brief/inspiration/, then run the molde-new-app skill." -ForegroundColor Green
 Write-Host "  app:  https://$Slug.parolin.net" -ForegroundColor Green
-Write-Host "  api:  https://api-$Slug.parolin.net" -ForegroundColor Green
+Write-Host "  api:  https://$Slug-api.parolin.net" -ForegroundColor Green

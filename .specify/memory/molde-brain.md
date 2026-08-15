@@ -184,19 +184,19 @@ For slug `<app>`:
      `start_command="node --experimental-require-module ./node_modules/.bin/prisma migrate deploy && node --import=tsx src/api/server.ts"`.
    - Deploy: `POST /api/v1/deploy?uuid=<appUuid>&force=true` — **POST since 2026-08-15**: the Coolify auto-update made this endpoint reject GET (`{"message":"This endpoint has changed to a POST request."}`). `provision.ps1` and `deploy-backend.yml` already send POST (see gotcha 16).
 
-4. **Verify:** `GET https://api-<app>.parolin.net/health` → `{"status":"ok"}`; smoke the real Google login.
+4. **Verify:** `GET https://<app>-api.parolin.net/health` → `{"status":"ok"}`; smoke the real Google login.
 
-5. **Residual manual (🧑 ~30s):** add `https://api-<app>.parolin.net/auth/google/callback` to the shared
+5. **Residual manual (🧑 ~30s):** add `https://<app>-api.parolin.net/auth/google/callback` to the shared
    Google OAuth client's Authorized redirect URIs. **Exact steps:**
    - Open the client directly:
      `https://console.cloud.google.com/auth/clients/111027901822-un9pavjod3l8b18t7mauvp72hq6qol00.apps.googleusercontent.com?project=gen-lang-client-0208522494`
      (Google Auth Platform → Clients → client **"Parolin Projects"**, project `gen-lang-client-0208522494`,
      client_id `111027901822-...apps.googleusercontent.com`). This is the same `GOOGLE_CLIENT_ID` in `provision.env`.
    - Scroll to **"Authorized redirect URIs"** → click **"+ Add URI"**.
-   - Paste `https://api-<app>.parolin.net/auth/google/callback` (e.g. `https://api-parafit.parolin.net/auth/google/callback`).
+   - Paste `https://<app>-api.parolin.net/auth/google/callback` (e.g. `https://parafin-api.parolin.net/auth/google/callback`). Apps from before 2026-06-30 (parafit, trajetorias2) keep the old `api-<app>` host — see the naming table below.
    - Click **Save** (bottom) → wait for the **"OAuth client saved"** toast.
    - Do NOT touch "Authorized JavaScript origins" — the domain is auto-added to authorized domains.
-   - The existing URIs (paramalhar, recibos, localhost:3000…) stay; you're only appending one row.
+   - The existing URIs (localhost:3000, api-parafit, parafin-api, coringao-orcamento-api, cota4-api, api.cota4.com.br as of 2026-08-15) stay; you're only appending one row.
 
 Always run `provision` in **dry-run first** (prints the intended calls), then `-Execute` for real.
 

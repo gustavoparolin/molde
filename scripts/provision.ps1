@@ -67,7 +67,7 @@ $coolHdr = @{
   "CF-Access-Client-Secret" = $cfAccessSec
 }
 
-# ── 1) Cloudflare DNS: api-<slug> → Coolify host ─────────────────────────────
+# ── 1) Cloudflare DNS: <slug>-api → Coolify host ─────────────────────────────
 # Use A record when target is an IP, CNAME otherwise
 $dnsType = if ($cfTarget -match '^\d{1,3}(\.\d{1,3}){3}$') { "A" } else { "CNAME" }
 Call "Cloudflare DNS ($dnsType $apiHost)" "POST" "https://api.cloudflare.com/client/v4/zones/$cfZone/dns_records" $cfHdr `

@@ -265,10 +265,10 @@ Co-autoria do Claude no rodapé das mensagens.
 | `JWT_SECRET` | valor aleatório | **outro** valor aleatório | Coolify | sim |
 | `GOOGLE_CLIENT_ID` | do Google Console | mesmo | Coolify | sim¹ |
 | `GOOGLE_CLIENT_SECRET` | do Google Console | mesmo | Coolify | sim¹ |
-| `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/google/callback` | `https://api-<app>.parolin.net/auth/google/callback` | Coolify | sim¹ |
+| `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/google/callback` | `https://<app>-api.parolin.net/auth/google/callback` | Coolify | sim¹ |
 | `NIXPACKS_NODE_VERSION` | — | `22` | Coolify | sim |
 | `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` / `S3_REGION` | MinIO local ou vazio | Cloudflare R2 | Coolify | só se usar upload |
-| `VITE_API_BASE_URL` | `http://localhost:3000` | `https://api-<app>.parolin.net` | **Cloudflare Pages** | sim |
+| `VITE_API_BASE_URL` | `http://localhost:3000` | `https://<app>-api.parolin.net` | **Cloudflare Pages** | sim |
 | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` / `AI_MAX_TOKENS` | chave Gemini ou Ollama | prod key | Coolify | só se usar AI |
 
 ¹ OAuth real. Em dev dá pra logar via mock sem isso (mas configure assim que puder).

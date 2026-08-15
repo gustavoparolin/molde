@@ -12,8 +12,8 @@ Leia `.specify/memory/molde-brain.md` (seção "Deploy pipeline"). Pré-requisit
 2. **Provision (dry-run).** `pwsh scripts/provision.ps1 -Slug <slug>` (adicione `-EnableR2` se o app
    faz upload). Revise as chamadas impressas.
 3. **Provision (real).** `pwsh scripts/provision.ps1 -Slug <slug> -Execute`.
-4. **Verificar.** `GET https://api-<slug>.parolin.net/health` → `{"status":"ok"}`; smoke do login real.
-5. **Avisar o único passo manual:** adicionar `https://api-<slug>.parolin.net/auth/google/callback` ao
+4. **Verificar.** `GET https://<slug>-api.parolin.net/health` → `{"status":"ok"}`; smoke do login real.
+5. **Avisar o único passo manual:** adicionar `https://<slug>-api.parolin.net/auth/google/callback` ao
    client Google compartilhado. Depois grave a memória de deploy (domínios + UUIDs do Coolify).
 
 Se algo falhar no provision, use `scripts/deprovision.ps1 -Slug <slug>` para limpar e refazer.

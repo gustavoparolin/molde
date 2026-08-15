@@ -52,4 +52,4 @@ fi
 echo ""
 echo "Done. Next: fill .brief/idea.md + .brief/inspiration/, then run the molde-new-app skill."
 echo "  app:  https://$slug.parolin.net"
-echo "  api:  https://api-$slug.parolin.net"
+echo "  api:  https://$slug-api.parolin.net"

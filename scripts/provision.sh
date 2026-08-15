@@ -12,7 +12,7 @@ env_file="$HOME/.config/molde/provision.env"
 [ -f "$env_file" ] || { echo "Missing $env_file (see README)." >&2; exit 1; }
 set -a; . "$env_file"; set +a
 
-app="$slug.parolin.net"; api="api-$slug.parolin.net"
+app="$slug.parolin.net"; api="$slug-api.parolin.net"
 cf="https://api.cloudflare.com/client/v4"
 echo "=== Provision '$slug' ($([ $dry -eq 1 ] && echo DRY-RUN || echo EXECUTE)) ==="
 
@@ -26,7 +26,7 @@ call() { # label method url json
   curl -fsS -X "$2" "$3" -H "Authorization: $auth" -H "Content-Type: application/json" ${4:+-d "$4"}
 }
 
-call "CF DNS api-$slug" POST "$cf/zones/$CLOUDFLARE_ZONE_ID/dns_records" \
+call "CF DNS $slug-api" POST "$cf/zones/$CLOUDFLARE_ZONE_ID/dns_records" \
   "{\"type\":\"CNAME\",\"name\":\"$api\",\"content\":\"$COOLIFY_HOST\",\"proxied\":true}"
 call "CF Pages project" POST "$cf/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects" \
   "{\"name\":\"$slug\",\"production_branch\":\"main\"}"
