@@ -8,7 +8,6 @@
 
 | Skill | Description |
 |-------|-------------|
-| [impeccable](./impeccable/SKILL.md) | Use when the user wants to design, redesign, shape, critique, audit, polish, clarify, distill, harden, optimize, adapt, animate, colorize, extract, or otherwise improve a frontend interface. |
 | [inspection](./inspection/SKILL.md) | Conduz uma inspeção de software Fagan/Scrum — o inspector registra defeitos com critérios de acei... \| Empirismo do Scrum (transparência → inspeção → adaptação) + método de Fagan (IBM, 1976): log de d... |
 
 <!-- agent-ninja-END -->

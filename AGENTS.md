@@ -247,8 +247,6 @@ npx playwright test   # E2E, only when both servers are running
 
 **Never commit if any gate fails.** Fix the issue, then commit.
 
-When the commit touches UI, also run `npx impeccable detect frontend/src/` (see §6.5) — findings are judged, not blindly obeyed, but a commit must not ship one you haven't looked at.
-
 ### The gates are necessary, not sufficient — test the REAL PATH
 
 Green gates are not evidence that the feature works. In July 2026 an app built from
@@ -311,17 +309,6 @@ frontend:
 - All DB access via `repositories/db.ts`.
 - Frontend state via Zustand stores only (no prop drilling, no raw fetch in components).
 - UI: Mantine 8. No external CSS frameworks. Tokens in `frontend/src/theme.ts`.
-
----
-
-## 6.5 Design — Impeccable (design vocabulary + anti-pattern detector)
-
-The template ships [Impeccable](https://impeccable.style) in `.claude/skills/impeccable/` (Claude Code) and `.github/skills/impeccable/` (Copilot) — adopted 2026-08-03 after a pilot on the Cota4 site (detector nearly silent on hand-crafted code, audit found real issues manual UX passes had missed).
-
-- **`PRODUCT.md` is design context.** Before any substantial UI work, make sure the app has a `PRODUCT.md` at the project root. Create it with `/impeccable init`, seeding the interview from `.brief/idea.md` — ask the user only what the brief does not answer. It records product truth (users, positioning, voice, brand commitments, evidence on hand) and forbids invented social proof. `DESIGN.md` (tokens/visual world) is created later by Impeccable's own flows, not by init.
-- **Detector after UI edits.** Run `npx impeccable detect frontend/src/` (plus `site/src/` when the app has a marketing site). Judge each finding: a pinned brand commitment (fonts, palette) beats a saturated-pattern warning — Impeccable's own rule is "the brief wins".
-- **Commands that fit the Parolin taste**: `/impeccable audit` (scored technical review: a11y, perf, responsive), `critique`, and the simplify/harden refiners (`distill`, `quieter`, `clarify`, `harden`, `optimize`). The flourish commands (`delight`, `overdrive`, `bolder`) run against the anti-bloat philosophy — only with an explicit brief from Gustavo.
-- **Update procedure**: like speckit (§2.4) — `npx impeccable update` in the Molde template first, review, then copy `.claude/skills/impeccable/` + `.github/skills/impeccable/` into derived apps.
 
 ---
 
