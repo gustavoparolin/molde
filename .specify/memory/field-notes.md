@@ -1076,6 +1076,8 @@ A constituição manda gate local. Os workflows do Molde (`deploy-frontend.yml`,
 
 **Resolução no template (2026-08-15):** `.github/workflows/gates.yml` reutilizável (`workflow_call` + `workflow_dispatch`; Node 24 com `cache: npm`, `npm ci`, `npx prisma generate` em `backend` ANTES do typecheck, depois `typecheck`, `lint`, `test`), chamado por `deploy-frontend.yml` e `deploy-backend.yml` como `jobs.gates` + `needs: gates` no job que publica. Roda no template puro, sem secret nenhum — é o gate do Molde rodando no Molde (a mesma sessão achou o typecheck do template quebrado desde 30/06; entrada abaixo). Simulado localmente sem `.env`, como no runner: typecheck, lint e test verdes. `molde-brain.md` atualizado (pipeline + gotcha). **Primeiro run no runner (commit `39762b4`): verde** — `gates / gates` success nos dois workflows (runs 31896279662 backend, 31896279622 frontend): `npm ci` → `Generated Prisma Client (v7.9.1)` → typecheck → lint → test; os jobs `deploy` seguiram e pularam por falta de secrets (modo template). Agora o gate rodou onde importa.
 
+**Aplicado no parafit (2026-08-15, v0.29.2, commit `4f24607`):** `gates.yml` copiado tal qual + `jobs.gates`/`needs: gates` nos dois deploys; primeiro run no runner verde de primeira (runs 31898046092 backend, 31898046152 frontend: `npm ci` → `Generated Prisma Client (v7.8.0)` → typecheck → lint → test → deploy). **Único ajuste extra num filho antigo:** o `frontend/package.json` do parafit (copiado em 2026-06-29) ainda tinha `vitest run` sem `--passWithNoTests` e o frontend não tem spec nenhum → `npm test` da raiz saía com código 1 antes mesmo do gate existir. Quem for aplicar o `gates.yml` em coringao-orcamento/parafin/trajetorias2/taskly: conferir essa flag no mesmo commit (ou escrever o primeiro spec). Simulado sem `.env` antes de empurrar: `prisma generate` e `npm test` passam (o parafit não tem spec de integração com Postgres, então nada a `skipIf`).
+
 ## [2026-08-15] cota4 — gotcha: `persist` do zustand lê `window.localStorage`; stub só de `localStorage` em teste Node desliga o storage em silêncio
 **Severity:** LOW
 **Status:** `fixed-in-template`
@@ -1104,6 +1106,8 @@ Conserto (Cota4 v0.75.2, `.github/workflows/deploy-backend.yml`): `-X POST` nos 
 
 **Resolução no template (2026-08-15):** `-X POST` nos dois curls de `.github/workflows/deploy-backend.yml` (Cloudflare e `--resolve` na origem) e o próprio workflow + `gates.yml` no filtro `on.push.paths`; `scripts/provision.ps1` também disparava o deploy inicial com GET no mesmo endpoint — virou POST; `molde-brain.md` atualizado (passo 3 do pipeline + gotcha novo). Filhos já provisionados aplicam o `-X POST` no próximo toque (nenhum PR aberto daqui).
 
+**Aplicado no parafit (2026-08-15, v0.29.2, commit `4f24607`):** `-X POST` nos dois curls + o próprio workflow e `gates.yml` em `paths`. Primeiro run: caminho Cloudflare caiu no managed challenge (como sempre), fallback pela origem com POST devolveu `{"deployments":[{"message":"Application parafit-api deployment queued.","deployment_uuid":"f35bevfe09y8wdt49l3w263f"}]}` e o Coolify marcou o deployment `finished` dois minutos depois (conferido por `GET /api/v1/deployments/<uuid>` pela origem). Faltam: coringao-orcamento, parafin, trajetorias2, taskly, mercado (se tiver backend). Nota: o `/health` do parafit ainda devolve só `{"status":"ok"}` — sem `commit`/`versao`, o smoke pós-deploy do Molde ("aguardar a versão NOVA atender") não tem como ser portado até o backend expor isso.
+
 ## [2026-08-15] molde — bug: o próprio template estava com os gates vermelhos desde 2026-06-30 (prisma CLI 6 com @prisma/client 7) e ninguém viu
 **Severity:** HIGH
 **Status:** `fixed-in-template`
@@ -1113,3 +1117,43 @@ Conserto (Cota4 v0.75.2, `.github/workflows/deploy-backend.yml`): `-X POST` nos 
 O commit `9c39d91` (2026-06-30, "fix(deps): atualizar @hono/node-server…") rebaixou por acidente `prisma` (o CLI) de `^7.8.0` para `^6.19.3` em `backend/package.json`, mantendo `@prisma/client` em `^7.8.0`. O CLI 6 não lê schema do Prisma 7 (`datasource` sem `url` → P1012), então `prisma generate` falha, o client não existe e `npm run typecheck` do backend cai com `Module '"@prisma/client"' has no exported member 'PrismaClient'` em qualquer clone limpo. Passou seis semanas assim porque (a) máquina que já tinha o client gerado não sente, (b) ninguém roda os gates **no template** — só nos filhos, e os quatro filhos vivos (cota4, parafit, coringao-orcamento, parafin) já estavam em `prisma@^7.x` por conta própria. Junto: `npm test` do template também saía vermelho porque o skeleton do frontend não tem nenhum `*.test.ts` e `vitest run` devolve código 1 em "No test files found".
 
 **Template impact:** corrigido em 2026-08-15 — `prisma` de volta a `^7.8.0` (lockfile resolve 7.9.1) e `vitest run --passWithNoTests` no `frontend/package.json`. A lição é a mesma do F-06 do Cota4 (entrada acima): gate que ninguém roda não é gate; quando o `gates.yml` reutilizável entrar no template, ele tem que rodar **no próprio template** também (`workflow_dispatch` já basta).
+
+## [2026-08-15] coringao-orcamento — infra: o runner do GitHub leva o Managed Challenge da Cloudflare TAMBÉM nos hosts das apps em `*.parolin.net` — "aguardar a versão NOVA" e o smoke pela borda nunca ficam verdes
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** stack
+**Stack:** parolin
+
+Ao aplicar o `-X POST` (entrada acima) e o `gates.yml` no coringao-orcamento (v0.18.3, commit `04e1591`), o primeiro run mostrou: gate verde, POST aceito pela origem (`deployment queued`), e o passo "Aguardar a versão NOVA atender" vermelho com `commit=[] versao=[]` nas 40 tentativas — enquanto o `/health` já respondia `0.18.3 · 04e1591` do Brasil. Olhando o histórico: esse passo **nunca ficou verde** desde que nasceu no app (v0.15.2, 2026-07-27) — 6 runs, todos com o mesmo padrão, todos com a versão nova no ar. Causa: a barreira documentada em 2026-07-19 para `coolify.parolin.net` vale para os hosts das apps também (`coringao-orcamento-api.parolin.net`): pela borda o runner recebe 403 com o HTML "Just a moment…", `curl -sf` devolve vazio, e o loop conclui que a versão não subiu. O cota4 (zona `cota4.com.br`) passa no mesmo passo no mesmo dia — é configuração da zona `parolin.net` (o token do `provision.env` não tem escopo para ler `security_level`/WAF, então não dá para confirmar qual regra por API). O smoke (`node scripts/smoke-producao.mjs`) vem depois e por isso nunca chegou a rodar no runner.
+
+Conserto (coringao-orcamento v0.18.4): (1) o passo de espera consulta a borda e, sem JSON, bate direto na origem com `curl --resolve "$API_HOST:443:$COOLIFY_ORIGIN_IP"` — o mesmo truque do trigger; **sem `-k`**, porque para o host da app o Traefik serve o certificado Let's Encrypt real (o self-signed é só para `coolify.parolin.net`); o log diz por qual via respondeu. (2) o smoke ganhou `--origem <ip>`: `node:https` puro (o job roda o script sem `npm ci`) com `servername` + `Host` do domínio da API, então SNI/roteamento/validação de certificado seguem corretos; à mão (`npm run smoke:prod`) continua pela borda, o caminho da usuária. Verificado 9/9 pelos dois caminhos.
+
+**Raio:** qualquer filho em `*.parolin.net` que porte a espera de versão / smoke do Molde (`API_PUBLIC_URL`) vai ficar vermelho no runner do mesmo jeito. Alternativa infra (decisão do Gustavo): regra de WAF na zona `parolin.net` liberando `/health` (ou os hosts `*-api.parolin.net`) para o runner — aí a borda volta a servir e o fallback fica dormindo, como o do trigger.
+
+**Template impact:** `molde/.github/workflows/deploy-backend.yml` (passo "Aguardar a versão NOVA atender") deveria ter o mesmo fallback pela origem quando `COOLIFY_ORIGIN_IP` existir, e o `scripts/smoke-producao.mjs` do template a opção `--origem`; `molde-brain.md`: anotar que a barreira da Cloudflare em `parolin.net` pega o runner em **todos** os hosts da zona, não só no Coolify.
+
+**Verificado no runner (2026-08-15, coringao-orcamento v0.18.4, commit `d2a3599`, run 31900508930):** gate verde → POST aceito pela origem → espera respondeu `via origem` desde a tentativa 1 (viu a versão antiga por 6 tentativas e o commit novo na 7ª, ~1,5 min) → smoke 9/9 "direto na origem". Primeiro deploy de backend deste app com o job inteiro verde desde 2026-07-27.
+
+---
+
+## [2026-08-15] recibos + paramalhar + mercado + taskly — deprovision, round 2: a receita de 09/08 esquece o que fica FORA do Coolify, e uma métrica do R2 mente
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** stack
+**Stack:** parolin
+
+Segunda morte de app da stack (as pastas locais de `recibos`, `paramalhar` e dos esqueletos `mercado` e `taskly` foram apagadas em 15/08, seis dias depois de a infra dos dois primeiros cair). Ao conferir o que sobrou antes de apagar, apareceram sete coisas que a receita de 09/08 (entrada `[2026-08-09] recibos + paramalhar — infra: deprovision…`) não cobre, todas fora do Coolify:
+
+1. **Buckets R2 não morrem com o app** — `recibos-assets` e `paramalhar-assets` continuavam na conta. E o segundo **tinha que continuar**: o parafit serve a mídia dos 1394 exercícios (70 URLs em `exercises-dump.json`, o seed do Technogym e o `R2_PUBLIC_BASE_URL` do `.env`) pelo domínio público do bucket do app morto (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`). Um `deprovision.ps1` que apagasse buckets "do app" teria quebrado o app sucessor. Regra: antes de apagar bucket, `grep` do nome do bucket E do `pub-<hash>.r2.dev` em `web/*` (fora de node_modules) — hotlink entre apps irmãos existe.
+2. **`wrangler r2 bucket info` disse `object_count: 0` / `bucket_size: 0 B` para um bucket que responde 200 com 1,8 MB de vídeo.** É métrica agregada (atrasa ou zera), não listagem. Para o passo 1 da receita ("provar que tem/não tem conteúdo") usar `HEAD` numa URL conhecida ou listagem S3 de verdade — nunca essa métrica.
+3. **Redirect URIs no client Google OAuth compartilhado** ficam órfãs (`api-recibos.parolin.net/auth/google/callback`, `api-paramalhar.parolin.net/…` e `api.paramalhar.com.br/…`). Não há API pública para o client do console — é manual: [console](https://console.cloud.google.com/auth/clients?project=gen-lang-client-0208522494).
+4. **Alias SSH** no `~/.ssh/config` (`Host oracle-vps paramalhar`) — o nome do app virou alias da VPS inteira em junho; o alias sobreviveu ao app.
+5. **Docs de infra que usam o app morto como exemplo canônico** (`Brain/5.Reference/Technical/Oracle Always Free instance.md`, `Runbook setup`, `Cloudflare - Novo subdomínio`) — quem seguir o runbook recria `api-paramalhar`. Banner no topo em 15/08; trocar o exemplo por um app vivo é dívida.
+6. **Listas que enumeram os filhos do Molde** (o `.brief/todo.md` do cota4, o arquivo de prompts, o campo Raio das field-notes, as tabelas do `molde-brain.md` — replicadas por cópia em 4 filhos, o inventário do `provision.env`, `00-PROJECTS`/`00-MOLDE` no Brain, `settings.json` do Claude com 7 permissões de caminho hardcoded). Cada uma é um lugar onde o app morto continua "vivo".
+7. **Coisas só locais e não versionadas na pasta do app**: `paramalhar/docs/` era gitignorado (19 MB: `treino-2026.md`, catálogo SmartFit, screenshots de inspiração, fotos de máquinas) e o `.brief/` do recibos idem — apagar a pasta confiando no repo arquivado teria perdido isso. Conferir `git status --ignored` antes de deletar; o que valer, copiar para o sucessor (`parafit/.brief/paramalhar-docs/`, `Parafin/specs/003-migracao-recibos/legado/`).
+
+Bônus operacional: `paramalhar` local estava 1 commit **atrás** do origin (nada a perder) e o repo `gustavoparolin/taskly` existe no GitHub — vazio e público desde 17/06 (nasceu junto com a pasta e nunca recebeu push). Enviar para a Lixeira falhou duas vezes com o `.git` cheio de arquivos read-only e OneDrive sincronizando: mover para fora do OneDrive e mandar de lá funcionou.
+
+**Template impact:** o `deprovision.ps1` (ainda inexistente, pedido na entrada de 09/08) precisa de um passo 0 "grep de dependências" (nome do bucket + `pub-*.r2.dev` + slug em `web/*`) que **recusa** apagar bucket referenciado por outro app; um passo final "checklist do que é manual" (redirect URI, alias SSH, listas/docs, 1Password) impresso na tela; e nunca usar `wrangler r2 bucket info` como prova de vazio.
+
+---

@@ -231,7 +231,7 @@ Always run `provision` in **dry-run first** (prints the intended calls), then `-
 | GitHub repo | `<slug>` | `parafit` |
 
 **Note:** Apps provisioned before 2026-06-30 use the old pattern `api-<slug>.parolin.net` —
-parafit, recibos, trajetorias2, paramalhar. New apps use `<slug>-api.parolin.net`.
+parafit, trajetorias2 (and, until they were decommissioned on 2026-08-09, recibos and paramalhar). New apps use `<slug>-api.parolin.net`.
 
 ### VPS — Oracle Cloud
 
@@ -241,7 +241,7 @@ parafit, recibos, trajetorias2, paramalhar. New apps use `<slug>-api.parolin.net
 - **SSH key:** `~/.ssh/oracle_vps.key` (Ed25519, passphrase-free, stored locally on the dev machine).
 - **SSH config entry** (in `~/.ssh/config`):
   ```
-  Host oracle-vps paramalhar
+  Host oracle-vps
       HostName 144.22.138.47
       User ubuntu
       IdentityFile ~/.ssh/oracle_vps.key
@@ -292,9 +292,9 @@ the container IP.
 | App | Container UUID prefix | Internal IP | DB name | DB user | Note |
 |---|---|---|---|---|---|
 | parafit | `eus6e9vzt2v0zssijpjppdrz` | `10.0.2.11` | `parafit` | `postgres` | legacy naming |
-| paramalhar | `py93j9ymwzqdszeq5p2qvxdu` | `10.0.2.8` | `paramalhar` | `paramalhar_app` | legacy naming |
-| recibos | `f13lkyius8n7ctiyksxfhx6u` | `10.0.2.4` | `recibos` | `postgres` | legacy naming |
 | trajetorias2 | `a7r8osrtc2xxs03tpcbkmw8h` | `10.0.2.6` | `trajetorias2` | `trajetorias2_app` | legacy naming |
+
+> Removed 2026-08-09 (apps decommissioned; containers, DBs and volumes deleted via the Coolify API): `paramalhar` (`py93j9ymwzqdszeq5p2qvxdu`, `10.0.2.8`) and `recibos` (`f13lkyius8n7ctiyksxfhx6u`, `10.0.2.4`). Their local folders were deleted on 2026-08-15. See field-notes `[2026-08-09] recibos + paramalhar — infra: deprovision…` and `[2026-08-15] recibos + paramalhar + mercado + taskly — deprovision, round 2…`.
 
 > **Note:** `coolify-db` (Coolify's own internal Postgres) must never be touched.
 
@@ -302,8 +302,7 @@ the container IP.
 
 **Local Postgres** (same machine as the dev environment):
 - Host: `localhost`, Port: `5432`, User: `postgres`, Password: `MARCIE#5178nova` (URL-encoded: `MARCIE%235178nova`)
-- All local app databases live in this single instance: `parafit`, `workout_tracker` (paramalhar),
-  `recibos`, etc. Visible as separate nodes under "Databases" in the same DBeaver connection.
+- All local app databases live in this single instance: `parafit`, `parafin`, `cota4`, etc. Visible as separate nodes under "Databases" in the same DBeaver connection. (`workout_tracker` and `recibos` were the local DBs of paramalhar/recibos — apps deleted 2026-08-15; safe to `DROP DATABASE` if they still exist.)
 
 **VPS Postgres** (per-app, one DBeaver connection each):
 - **Main tab:** Host = container's internal Docker IP (e.g. `10.0.2.11`), Port `5432`, Database =
@@ -316,7 +315,7 @@ the container IP.
 
 ### Cloudflare R2 — media and file storage
 
-- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `paramalhar-assets`).
+- Bucket naming convention: **`<app>-assets`** (e.g. `parafit-assets`, `cota4-assets`). ⚠️ `paramalhar-assets` outlived its app on purpose: parafit hotlinks the exercise media from its public domain (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`) — do not delete it until parafit has moved the media to `parafit-assets` (`npm run upload:assets` + reseed URLs + `R2_PUBLIC_BASE_URL`).
 - Buckets are **private by default** — no public access. Serve files via pre-signed URLs or a Cloudflare
   Worker with access controls.
 - Access from the backend via the standard S3 SDK:
@@ -384,7 +383,7 @@ the container IP.
 14. **Backend CD (fixed as of 2026-06-30)** — `deploy-backend.yml` was added to the Molde template;
     `provision.ps1` now sets `COOLIFY_APP_UUID`, `COOLIFY_API_TOKEN`, `COOLIFY_API_URL`,
     `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` as GitHub secrets automatically.
-    **For apps provisioned before 2026-06-30** (parafit, recibos, trajetorias2, paramalhar):
+    **For apps provisioned before 2026-06-30** (parafit, trajetorias2; recibos and paramalhar were decommissioned 2026-08-09):
     set the missing secrets manually with `gh secret set COOLIFY_APP_UUID --body <uuid>` etc.,
     and confirm `deploy-backend.yml` is present in the repo's `.github/workflows/`.
     Symptom if misconfigured: `/health` returns 200 but routes return `404` — server is up but
@@ -393,7 +392,7 @@ the container IP.
 15. **Coolify Postgres internal DB name (fixed as of 2026-06-30)** — `provision.ps1` now passes
     `postgres_db=<slug>-db`, `postgres_user=<slug>-user`, `postgres_password=<generated>` when
     creating the Postgres container, so the DB is named correctly from the start.
-    **For apps provisioned before 2026-06-30** (parafit, recibos, trajetorias2, paramalhar):
+    **For apps provisioned before 2026-06-30** (parafit, trajetorias2; recibos and paramalhar were decommissioned 2026-08-09):
     the DB was renamed manually via `ALTER DATABASE postgres RENAME TO <slug>`. Already done.
 
 16. **Coolify `/api/v1/deploy` is POST-only (since 2026-08-15)** — the Coolify auto-update changed the
