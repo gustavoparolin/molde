@@ -7,7 +7,7 @@
 
 **Deste app** *(o agente preenche ao criar/deployar — padrão: `<slug>.parolin.net`)*:
 
-- **Produção** — app → `https://<slug>.parolin.net` · API → `https://api-<slug>.parolin.net/health`
+- **Produção** — app → `https://<slug>.parolin.net` · API → `https://<slug>-api.parolin.net/health`
 - **GitHub** — repo → `https://github.com/gustavoparolin/<slug>` · Actions (deploys) → `.../actions`
 
 **Comuns da stack Parolin:**
@@ -28,16 +28,8 @@
 
 ## ⏳ 🧑 Sobras da morte de recibos / paramalhar / mercado / taskly (pastas apagadas em 15/08) — só você consegue
 
-Contexto em uma linha: em 15/08 o Claude apagou as 4 pastas de `web/` (Lixeira do Windows + lixeira do OneDrive), atualizou índices/filas/docs e o Parafin (spec 003 encerrada, `migrar-recibos.ts` removido, commit `6817edc`), tirou o alias SSH `paramalhar`, arquivou o repo vazio `taskly` e as 7 permissões mortas do `settings.json`. Registro completo: `X:\Obsidian\Brain\Projects\Molde\Log\2026-08-15.md` e a field-note `[2026-08-15] … deprovision, round 2`. Ficou o que precisa de login/decisão sua:
+Contexto em uma linha: em 15/08 o Claude apagou as 4 pastas de `web/` (Lixeira do Windows + lixeira do OneDrive), atualizou índices/filas/docs e o Parafin (spec 003 encerrada, `migrar-recibos.ts` removido, commit `6817edc`), tirou o alias SSH `paramalhar`, arquivou o repo vazio `taskly` e as 7 permissões mortas do `settings.json`. Registro completo: `X:\Obsidian\Brain\Projects\Molde\Log\2026-08-15.md` e a field-note `[2026-08-15] … deprovision, round 2`. Ficou o que precisa de login/decisão sua (repo `taskly`, redirect URIs do Google e bucket `recibos-assets` já foram — baixa em 15/08):
 
-- **Repo `gustavoparolin/taskly` (vazio, público, arquivado):** apagar. Ou `gh auth refresh -h github.com -s delete_repo` (abre o navegador) e depois `gh repo delete gustavoparolin/taskly --yes`; ou no site: [Settings do repo](https://github.com/gustavoparolin/taskly/settings) > rolar até *Danger Zone* > **Delete this repository** > digitar `gustavoparolin/taskly`.
-- **Google OAuth (client compartilhado):** [abrir o client direto](https://console.cloud.google.com/auth/clients/111027901822-un9pavjod3l8b18t7mauvp72hq6qol00.apps.googleusercontent.com?project=gen-lang-client-0208522494) (ou [lista de clients](https://console.cloud.google.com/auth/clients?project=gen-lang-client-0208522494) > `111027901822-…`) > seção *Authorized redirect URIs* > apagar as três linhas abaixo > **Save**. Conferir também *Authorized JavaScript origins* por `https://recibos.parolin.net` e `https://paramalhar.parolin.net` (se existirem, apagar).
-  ```
-  https://api-recibos.parolin.net/auth/google/callback
-  https://api-paramalhar.parolin.net/auth/google/callback
-  https://api.paramalhar.com.br/auth/google/callback
-  ```
-- **Bucket R2 `recibos-assets` (órfão):** decidir apagar. Painel R2 → [abrir](https://dash.cloudflare.com/3c01ecc63645d5a2597ceed6ff2bc6d3/r2/overview) > `recibos-assets` > aba *Objects*: se estiver vazio (a métrica do `wrangler` disse 0, mas ela se mostrou não confiável — olhar a listagem), *Settings* > **Delete bucket**. Se tiver as fotos originais dos cupons e você quiser guardar, baixar antes (o Parafin refez os 11 recibos a partir das fotos, não do bucket).
 - **Bucket R2 `paramalhar-assets`: NÃO APAGAR.** O parafit serve a mídia dos exercícios por ele (`pub-476f957c88664a4d8ed1f4d8236c5557.r2.dev`). Só some depois que o item 🤖 do `.brief/todo.md` do parafit (migrar mídia para `parafit-assets`) estiver feito.
 - **1Password (cofre `parolin-infra`)** — três itens de apps mortos; ver também as tasks do Brain `20260729-07` e `20260729-08`, que já ganharam a anotação:
   - `anthropic-recibos` → antes de arquivar, revogar a chave em [console da Anthropic > API keys](https://console.anthropic.com/settings/keys) (é a mesma chave do item `Claude AI API KEY` do Personal). Se algum app seu ainda usar essa chave, não revogue — só renomeie o item.
