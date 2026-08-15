@@ -979,3 +979,127 @@ template no `.env` de um app que sabidamente a divide com outro.
 O Cota4 instalou o [Impeccable](https://impeccable.style) (open source, Apache 2.0, `npx impeccable install`, Node 22.12+) e pilotou no workspace `site/`. O que ele entrega: 23 comandos de design com vocabulário preciso (`/impeccable audit`, `distill`, `quieter`, `harden`, `clarify`…), um detector determinístico de anti-padrões de UI gerada por IA (`npx impeccable detect src/`, encaixável em CI) e dois arquivos de contexto que o agente lê antes de mexer em UI (`PRODUCT.md` = verdade do produto, `DESIGN.md` = tokens/mundo visual). Resultado do piloto: detector achou só 1 aviso (fonte Inter "batida" — vencido pelo manual da marca, e a regra do próprio Impeccable diz que o brief pinado vence o aviso); audit deu 17/20 com achados reais e acionáveis (contraste borderline de chips, kill global de 0.01ms no prefers-reduced-motion, webm sem fallback mp4/poster, og:image em proporção errada, Google Fonts de terceiro num site que promete "sem rastreadores"). Custos/pegadinhas: (1) o instalador detecta harnesses e escreve em `.claude/` E `.github/` — num monorepo ele resolve o app-alvo por cwd (`context.mjs` pede para rodar do diretório do child app); (2) o `PRODUCT.md`/`DESIGN.md` vão na RAIZ do app (sem opção de `.brief/`); (3) o init exige uma rodada de entrevista com o usuário (AskUserQuestion) antes de gravar o PRODUCT.md — não é 100% autônomo por design.
 
 **Template impact:** **ADOTADO em 2026-08-03** (decisão do Gustavo no mesmo dia do piloto): Impeccable v3.5.0 instalado no template (`.claude/skills/impeccable/` + `.github/skills/impeccable/`), fluxo documentado no `AGENTS.md` §6.5 (PRODUCT.md antes de UI substancial, detector após edições de UI, comandos que casam com o gosto anti-inchaço; flourish só com brief explícito) e passo **4. Design** adicionado ao `molde.new` (Claude e Copilot): `/impeccable init` semeado pelo `idea.md` + `npx impeccable detect frontend/src/` depois das telas. Apps já derivados (cota4 ✅; coringao-orcamento, parafit, parafin, recibos, celula pendentes) instalam manualmente com `npx impeccable install` na raiz.
+
+---
+
+## [2026-08-09] recibos + paramalhar — infra: deprovision has an order of operations, and Pages refuses to die with a custom domain attached
+**Severity:** HIGH
+**Status:** `noted`
+
+Primeira morte de app da stack Parolin: `recibos` e `paramalhar` foram descomissionados por API depois de seis dias de quarentena (apps parados em 03/08, apagados em 09/08). A receita que funcionou, na ordem, porque a ordem importa:
+
+1. **Provar o backup ANTES de qualquer delete.** Não confiar no "o Coolify faz backup diário": listar os objetos no bucket R2 e olhar data e tamanho. No `recibos` eram 11 dumps de ~24,7 KB, o último do próprio dia da parada — e o tamanho idêntico por 9 dias seguidos foi a evidência de que o banco estava morto havia tempo. Retenção de 30 dias no R2 é a janela real de ressurreição, então o delete tem prazo de arrependimento.
+2. **Quarentena antes do delete.** Parar o app pela API e esperar. Barato, reversível num clique, e é o único teste honesto de "alguém ainda usa isto?".
+3. **Coolify:** `DELETE /api/v1/applications/{uuid}` e `DELETE /api/v1/databases/{uuid}` com `delete_configurations=true&delete_volumes=true&docker_cleanup=true&delete_connected_networks=true`. Responde `deletion request queued` — é assíncrono, então conferir a lista depois, não confiar no 200. O agendamento de backup morre junto com o banco; os dumps já enviados ao R2 sobrevivem (são objetos no bucket, não recurso do Coolify).
+4. **Cloudflare Pages recusa o delete do projeto enquanto houver domínio customizado:** erro `8000028 "To delete your project, you must first delete all custom domains associated with your project"`. O caminho é `GET .../pages/projects/{p}/domains` → `DELETE .../domains/{nome}` → só então `DELETE .../pages/projects/{p}`. Sem isso o deprovision trava no fim, depois de o DNS já ter sido removido.
+5. **DNS por último entre os recursos vivos, e conferir o que o CNAME aponta.** O `api-paramalhar` apontava para um `*.cfargotunnel.com` — um túnel Cloudflare, não a VPS. A conta não tinha túnel nenhum ativo (`GET /accounts/{id}/cfd_tunnel` devolveu lista vazia): o registro era um ponteiro para um túnel que já não existia. Vale a checagem, senão sobra lixo no Zero Trust ou some um serviço que ninguém sabia que estava lá.
+6. **GitHub: arquivar, não deletar** (`gh repo archive`). Custo zero, história preservada, e o repo fica explicitamente morto para quem passar depois.
+
+**Template impact:** o Molde tem `provision.ps1` mas não tem o inverso. Vale um `deprovision.ps1` com essas seis etapas, exigindo confirmação explícita e recusando-se a rodar se o passo 1 (dump recente no R2) não puder ser provado. Enquanto ele não existe, esta entrada é a receita.
+
+---
+
+## [2026-08-09] cota4 — gotcha: `curl` sem `Accept: text/html` não recebe o que a Cloudflare injeta no edge (falso "analytics quebrado")
+**Severity:** LOW
+**Status:** `noted`
+
+Conferi se o Cloudflare Web Analytics estava instrumentando `cota4.com.br` baixando a home com `curl` e procurando `cloudflareinsights` no HTML. Não veio nada, nem com User-Agent de navegador — conclusão registrada: "o beacon sumiu". **Estava errado.** O painel mostrava 48 page views e 26 visitas nas últimas 24 h, ou seja, navegadores reais recebiam o script normalmente.
+
+A causa: a Cloudflare injeta o snippet de RUM via HTMLRewriter no edge, e essa injeção só acontece quando a requisição pede HTML. O `curl` manda `Accept: */*` por padrão, e nesse caso o HTML volta cru. Com `-H "Accept: text/html,application/xhtml+xml"` o `<script ... cloudflareinsights.com/beacon.min.js ...>` aparece na hora. Trocar o User-Agent não resolve, porque o critério é o `Accept`, não o agente.
+
+Vale para qualquer coisa injetada no edge — RUM, Zaraz, Rocket Loader, avisos gerenciados. **A regra geral:** ao verificar por `curl` um comportamento que o navegador vê, replique os cabeçalhos do navegador, não só o User-Agent; e quando a medição de fora contradiz o painel, desconfie da régua antes de acusar o medido.
+
+**Template impact:** se algum script de smoke test do Molde checar HTML servido pela Cloudflare, ele precisa mandar `Accept: text/html` — senão produz falso negativo silencioso.
+
+## [2026-08-13] cota4 — gotcha: node --watch dentro do OneDrive reinicia sozinho e derruba baterias contra o servidor local
+**Severity:** LOW
+**Status:** `noted`
+
+Rodando uma bateria de 62 chamadas contra o backend local (`npm run dev`, que usa `node --watch`), o servidor reiniciou no MEIO da rodada duas vezes sem nenhum arquivo editado — o log mostra `Restarting 'src/api/server.ts'`. Causa provável: o repo vive dentro do OneDrive, e o sync toca timestamps que o watcher interpreta como mudança. Cada restart derruba os requests em voo ("fetch failed" no meio da bateria, resultado parcial que parece bug do código).
+
+Duas lições que se somam: (1) benchmark/bateria contra servidor local roda com o servidor SEM watch (`node --import=tsx src/api/server.ts` direto); (2) no Windows, encerrar a task de background do `npm run dev` mata o npm mas deixa o node FILHO órfão segurando a porta — o servidor seguinte morre com EADDRINUSE. Receita: `Get-NetTCPConnection -LocalPort 3000 -State Listen | Stop-Process no OwningProcess` antes de subir de novo.
+
+**Template impact:** docs — anotar no runbook de dev dos apps derivados que baterias locais usam servidor sem watch, e a receita PowerShell de liberar a porta.
+
+## [2026-08-15] cota4 — pattern: porta nova de login/token não limpa rascunho de tenant (classe 2026-07-27)
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** template
+**Stack:** both
+**Inspection:** cota4 `.brief/inspections/2026-08-15-inspection.md` F-01
+
+O Cota4 tem três portas que chamam `limparStoresDeTenant()` (`impersonar`, `sairImpersonacao`, `logout`) e uma quarta que não: `entrarComToken`. No Capacitor o Google volta por deep link **sem reload**. Zustand fica com o rascunho (PII) da empresa A; o JWT já é da B; o Salvar grava conteúdo de A na linha de B. RLS fez o trabalho — a linha é a certa. O formulário não.
+
+O skeleton do Molde (`frontend/src/store/authStore.ts`) ainda é user único, sem persist de tenant — **o bug não está no template hoje**. Está no padrão que o filho copia quando acrescenta Empresa, impersonation ou draft em localStorage. A quarta porta aparece sempre: OAuth callback, mock, demo, magic link.
+
+**Raio:** qualquer filho com troca de sessão + rascunho persistido. Confirmado no Cota4. Não abrir PR nos irmãos nesta sessão.
+
+**Template impact:** (1) no `authStore` de referência, um único `limparStoresDeTenant()` e a regra “toda porta de token novo chama isso”; (2) uma linha na constituição / parolin-stack: posse de formulário ≠ RLS; (3) quando o skeleton ganhar tenant, o teste da quarta porta nasce junto. Primo já documentado: `enterWith` em `requireAuth` awaitado (entrada 2026-07-22).
+
+**Resolução no Cota4 (2026-08-15, v0.75.0, Author da inspection):** `entrarComToken` chama `limparStoresDeTenant()` logo depois de `set({ token })` e antes de `carregarMe()`. Descoberta na passagem: no web o reload do OAuth **não** protegia — o boot rehidrata o rascunho persistido sob a sessão ANTERIOR (o `auth.sessao` só muda depois do `/auth/me`), então a limpeza vale para web e Capacitor. Teste com os stores de verdade (`frontend/src/store/posseDoRascunho.test.ts`): localStorage em Map + `window = { localStorage }` (ver gotcha abaixo) + `fetch` falso; sessão A no localStorage, rascunho de A, `entrarComToken(tokenB)` → draft vazio em memória E no localStorage. Sem o conserto, 6/7 testes do arquivo falham. Junto foram: `carregarParaEdicao` e a falha de extração de foto passaram a carimbar `empresaId`, e um helper `comDono()` carimba na origem os rascunhos escritos nesta sessão a partir de `DRAFT_VAZIO` (não é adotar órfão no rehydrate — este continua descartando).
+
+## [2026-08-15] cota4 — pattern: guard de identidade no PUT é no-op se o cliente omitir o id
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** template
+**Stack:** both
+**Inspection:** cota4 `.brief/inspections/2026-08-15-inspection.md` F-05
+
+`PUT /empresa` recusa `empresa_divergente` só com `if (parsed.data.id && … !== empresaAtual.id)`. Sem `id`, grava o formulário velho na empresa do token. O front omite `id` quando `original` ainda é null; o teste trata omitir como correto. Zero teste HTTP do 409.
+
+O Item do Molde identifica o recurso na URL (`PATCH /items/:id`) e o `userId` no auth — não tem esse furo hoje. O furo aparece no filho que manda **identidade no body** de um recurso de tenant (Empresa, configurações, qualquer form cacheado entre telas).
+
+**Raio:** Cota4 confirmado. Filhos com tela de Ajustes/tenant compartilhada. Não patchar irmãos daqui.
+
+**Template impact:** se o body carrega “de quem é este formulário”, o campo é **obrigatório** quando a sessão já tem o recurso. Omitir ≠ “então não checo”. Teste negativo: id de outro tenant → 409; sem id com sessão → 4xx; id da sessão → segue. Comentário no slice Item: identidade na URL está ok; identidade no body não pode ser opcional.
+
+**Resolução no Cota4 (2026-08-15, v0.75.0):** regra pura `conferirPosseDoFormulario(idDoFormulario, empresaDaSessaoId)` em `backend/src/services/posseFormularioEmpresa.ts` → sem id: 409 `empresa_nao_identificada`; id de outra: 409 `empresa_divergente`; igual: segue. O `id` continua `optional()` no zod SÓ para a recusa ter código próprio (um 400 "Payload inválido" diria menos); a rota recusa. No front, `corpoSalvar(f, id: string)` exige o id (o `sujo` compara só os campos via `camposSalvar`), `salvar` não dispara sem `original`, e o 409 mostra a mensagem do servidor + `limpar()` + `recarregar()`. **Teste HTTP de rota sem subir o server.ts:** `Fastify() + @fastify/jwt (segredo de teste) + hook onRequest bindRequestContext + registerEmpresaRoutes(server)`, JWT assinado com `server.jwt.sign`, empresa + membro criados via `prismaAdmin`, `server.inject(...)`, `describe.skipIf(!temBanco)` como as outras integrações (`backend/src/api/routes/empresa.integration.spec.ts`). É a receita para testar qualquer rota de tenant de ponta a ponta (guard de sessão + RLS + banco de verdade).
+
+## [2026-08-15] cota4 — bug: workflows de deploy não correm typecheck/lint/test
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** template
+**Stack:** both
+**Inspection:** cota4 `.brief/inspections/2026-08-15-inspection.md` F-06
+
+A constituição manda gate local. Os workflows do Molde (`deploy-frontend.yml`, `deploy-backend.yml`) fazem install + build/redeploy. Nenhum corre `npm run typecheck && npm run lint && npm test`. O Cota4 herdou isso: 342 casos são disciplina humana; o Pages publica o SHA assim mesmo. Smoke do Cota4 (quando existe) corre **depois** do ar.
+
+**Raio:** todo app provisionado com esses workflows — cota4, parafit, coringao-orcamento, trajetorias2, Parafin, mercado, taskly, e os que o `provision.ps1` criar. Recibos/paramalhar já descomissionados.
+
+**Template impact:** step antes do wrangler / Coolify com `npm run typecheck && npm run lint && npm test` no mesmo SHA. Specs de integração que exigem Postgres usam `skipIf` sem env — não bloquear Pages por banco ausente no runner. Playwright é outro cartão (precisa seed). Recusar este gate só com decisão escrita do Gustavo; recusar em silêncio deixa o buraco em todos os filhos novos.
+
+**Resolução no Cota4 (2026-08-15, v0.75.0):** um workflow reutilizável `.github/workflows/gates.yml` (`on: workflow_call` + `workflow_dispatch`; Node 24 com `cache: npm`, `npm ci`, `npm run typecheck`, `npm run lint`, `npm test`), e cada workflow de publicação ganha `jobs.gates: { uses: ./.github/workflows/gates.yml }` + `needs: gates` no job que publica (`deploy-frontend`, `deploy-backend`, `deploy-site`, `apk-teste`). Simulado localmente sem `.env` (como no runner): as suites de Postgres se pulam, o resto passa. **A prova de que faltava:** a v0.72.0 do Cota4 subiu com `npm test` vermelho (o guard de marca `check-wordmark` acusava um "Cota4" cru na Home) e ficou 2 dias no ar sem ninguém ver. Receita transplantável para o `provision.ps1`/workflows do Molde tal qual. **Armadilha do primeiro run (v0.75.1):** o gate caiu no runner porque **Prisma 7 não gera o client no `npm ci`** (entrada 2026-06-29 deste arquivo; é por isso que o Coolify roda `prisma generate` no `install_command`) — o typecheck do backend não achava `PrismaClient`. O `gates.yml` precisa de `npx prisma generate` com `working-directory: backend` ANTES do typecheck (não exige `DATABASE_URL`). O `needs: gates` fez o papel: os três deploys ficaram `skipped`. Um gate que nunca rodou no runner ainda não é gate.
+
+## [2026-08-15] cota4 — gotcha: `persist` do zustand lê `window.localStorage`; stub só de `localStorage` em teste Node desliga o storage em silêncio
+**Severity:** LOW
+**Status:** `noted`
+**Class:** stack
+**Stack:** both
+
+Ao testar um store com `persist` no vitest em ambiente `node` (sem jsdom), `vi.stubGlobal("localStorage", fake)` não basta: o default do middleware é `createJSONStorage(() => window.localStorage)`, `window` não existe, o `getStorage()` lança, e o persist segue **sem storage** — sem `api.persist` (`useStore.persist` é `undefined`), sem gravar nada, com um `console.warn` "storage is currently unavailable" só na primeira escrita. O teste do "F5 preserva o rascunho" passa em falso ou quebra com `Cannot read properties of undefined (reading 'rehydrate')`. Receita: `vi.stubGlobal("window", { localStorage: fake })` junto do stub de `localStorage`, importar os stores **depois** (dynamic `await import`), e usar `useStore.persist.rehydrate()` para simular o F5. Junto: `vi.mock("@mantine/notifications", ...)` se algum store importar notificações, e `fetch` falso com `new Response(JSON.stringify(...))` (Node 24 tem `Response`, `File`, `FormData`).
+
+**Template impact:** docs de teste do skeleton (quando houver store persistido): "stub de `window` + `localStorage`, importar depois". Meia hora perdida no Cota4 por causa disto.
+
+## [2026-08-15] cota4 — infra: Coolify passou a exigir POST em `/api/v1/deploy` — o `deploy-backend.yml` de TODOS os filhos quebrou em silêncio
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** stack
+**Stack:** parolin
+
+O `deploy-backend.yml` do Molde (e de todo filho provisionado por ele) dispara o redeploy com `curl … "${API_URL}/api/v1/deploy?uuid=…&force=false"` — um GET. Em 2026-08-13 funcionou (v0.74.0 do Cota4). Em 2026-08-15 o Coolify (auto-atualizado no meio) respondeu `{"message":"This endpoint has changed to a POST request."}` e o job saiu com exit 22 no caminho da origem (o caminho pela Cloudflare já cai no managed challenge, como documentado na entrada 2026-07-19). Resultado: **o backend não sobe mais por push**, e o GitHub mostra vermelho só no passo "Trigger Coolify redeploy" — quem não olha o Actions não percebe.
+
+Conserto (Cota4 v0.75.2, `.github/workflows/deploy-backend.yml`): `-X POST` nos DOIS curls (Cloudflare e `--resolve` na origem). Junto: acrescentar o próprio arquivo do workflow ao filtro de `paths` do `on.push` — no template só `backend/**`, `package.json` e `package-lock.json` disparam, então corrigir o workflow sozinho não o exercita (foi preciso bump de versão para testar).
+
+**Raio:** todo app com `deploy-backend.yml` do Molde: parafit, coringao-orcamento, Parafin, mercado (se tiver backend), trajetorias2, taskly… Recibos/paramalhar já descomissionados. Não abrir PR nos irmãos nesta sessão; cada um aplica o `-X POST` no próximo toque (ou o Gustavo passa o `sed` nos sete).
+
+**Template impact:** (1) `molde/.github/workflows/deploy-backend.yml`: `-X POST` nos dois curls + o próprio workflow em `paths`; (2) `provision.ps1`/molde-brain: anotar que a API do Coolify muda sem aviso com o auto-update — o smoke pós-deploy do Cota4 (espera a versão nova no `/health`) é o que transforma isso em vermelho legível.
+
+## [2026-08-15] molde — bug: o próprio template estava com os gates vermelhos desde 2026-06-30 (prisma CLI 6 com @prisma/client 7) e ninguém viu
+**Severity:** HIGH
+**Status:** `fixed-in-template`
+**Class:** template
+**Stack:** both
+
+O commit `9c39d91` (2026-06-30, "fix(deps): atualizar @hono/node-server…") rebaixou por acidente `prisma` (o CLI) de `^7.8.0` para `^6.19.3` em `backend/package.json`, mantendo `@prisma/client` em `^7.8.0`. O CLI 6 não lê schema do Prisma 7 (`datasource` sem `url` → P1012), então `prisma generate` falha, o client não existe e `npm run typecheck` do backend cai com `Module '"@prisma/client"' has no exported member 'PrismaClient'` em qualquer clone limpo. Passou seis semanas assim porque (a) máquina que já tinha o client gerado não sente, (b) ninguém roda os gates **no template** — só nos filhos, e os quatro filhos vivos (cota4, parafit, coringao-orcamento, parafin) já estavam em `prisma@^7.x` por conta própria. Junto: `npm test` do template também saía vermelho porque o skeleton do frontend não tem nenhum `*.test.ts` e `vitest run` devolve código 1 em "No test files found".
+
+**Template impact:** corrigido em 2026-08-15 — `prisma` de volta a `^7.8.0` (lockfile resolve 7.9.1) e `vitest run --passWithNoTests` no `frontend/package.json`. A lição é a mesma do F-06 do Cota4 (entrada acima): gate que ninguém roda não é gate; quando o `gates.yml` reutilizável entrar no template, ele tem que rodar **no próprio template** também (`workflow_dispatch` já basta).
