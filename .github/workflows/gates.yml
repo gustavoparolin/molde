@@ -1,0 +1,45 @@
+name: Gates (typecheck, lint, test)
+
+# Os MESMOS gates que o AGENTS.md §4 exige antes de qualquer commit, rodando no
+# SHA que vai ao ar. Até a inspection do Cota4 de 2026-08-15 (F-06) nenhum
+# workflow do Molde os corria: o frontend ia direto para o Pages, o backend para
+# o Coolify (com smoke só DEPOIS de estar no ar). No Cota4 a v0.72.0 subiu com
+# `npm test` vermelho e ficou 2 dias no ar sem ninguém ver; no próprio template
+# o typecheck esteve quebrado de 2026-06-30 a 2026-08-15 (prisma CLI 6 com
+# @prisma/client 7) porque ninguém o rodava aqui. Gate que ninguém roda não é gate.
+#
+# Reutilizável: deploy-frontend.yml e deploy-backend.yml chamam este job e só
+# publicam se ele passar (`needs: gates`). Roda também no template puro, sem
+# secret nenhum — é o gate do Molde rodando no Molde. Specs de integração que
+# exigem Postgres devem usar `describe.skipIf(!temBanco)` para não bloquear o
+# Pages por banco ausente no runner; Playwright fica de fora (precisa de seed).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # A mesma major do backend em produção (engines >=24).
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Prisma 7 NÃO gera o client no install (field-note 2026-06-29): sem isto o
+      # typecheck do backend cai com "@prisma/client has no exported member
+      # PrismaClient" — foi o primeiro vermelho deste gate no Cota4. É o mesmo
+      # passo que o Coolify roda no install_command (molde-brain.md). Não precisa
+      # de DATABASE_URL para gerar.
+      - name: Prisma generate (o client não vem do npm ci)
+        run: npx prisma generate
+        working-directory: backend
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Testes (backend + frontend)
+        run: npm test

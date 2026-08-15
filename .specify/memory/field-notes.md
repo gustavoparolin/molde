@@ -1023,7 +1023,7 @@ Duas lições que se somam: (1) benchmark/bateria contra servidor local roda com
 
 ## [2026-08-15] cota4 — pattern: porta nova de login/token não limpa rascunho de tenant (classe 2026-07-27)
 **Severity:** HIGH
-**Status:** `noted`
+**Status:** `fixed-in-template`
 **Class:** template
 **Stack:** both
 **Inspection:** cota4 `.brief/inspections/2026-08-15-inspection.md` F-01
@@ -1038,9 +1038,11 @@ O skeleton do Molde (`frontend/src/store/authStore.ts`) ainda é user único, se
 
 **Resolução no Cota4 (2026-08-15, v0.75.0, Author da inspection):** `entrarComToken` chama `limparStoresDeTenant()` logo depois de `set({ token })` e antes de `carregarMe()`. Descoberta na passagem: no web o reload do OAuth **não** protegia — o boot rehidrata o rascunho persistido sob a sessão ANTERIOR (o `auth.sessao` só muda depois do `/auth/me`), então a limpeza vale para web e Capacitor. Teste com os stores de verdade (`frontend/src/store/posseDoRascunho.test.ts`): localStorage em Map + `window = { localStorage }` (ver gotcha abaixo) + `fetch` falso; sessão A no localStorage, rascunho de A, `entrarComToken(tokenB)` → draft vazio em memória E no localStorage. Sem o conserto, 6/7 testes do arquivo falham. Junto foram: `carregarParaEdicao` e a falha de extração de foto passaram a carimbar `empresaId`, e um helper `comDono()` carimba na origem os rascunhos escritos nesta sessão a partir de `DRAFT_VAZIO` (não é adotar órfão no rehydrate — este continua descartando).
 
+**Resolução no template (2026-08-15):** o skeleton segue user único, sem store de tenant nem rascunho persistido — não há o que limpar hoje, então a regra entrou **escrita** no ponto onde a próxima porta vai nascer: comentário em `frontend/src/store/authStore.ts` sobre `setUser` (única porta do skeleton; OAuth callback e mock passam por ela) — um único `limparStoresDeTenant()`, chamado por TODA porta de token novo (callback OAuth, deep link, mock, demo, magic link, impersonar/sair, logout) ANTES do `/auth/me`; órfão se descarta, não se adota; o teste da quarta porta nasce junto — e uma linha em `frontend/src/features/auth/authCallbackHandler.ts` apontando para lá. Nenhum store inventado. O invariante já consta no `.github/skills/inspection/SKILL.md`.
+
 ## [2026-08-15] cota4 — pattern: guard de identidade no PUT é no-op se o cliente omitir o id
 **Severity:** HIGH
-**Status:** `noted`
+**Status:** `fixed-in-template`
 **Class:** template
 **Stack:** both
 **Inspection:** cota4 `.brief/inspections/2026-08-15-inspection.md` F-05
@@ -1055,9 +1057,11 @@ O Item do Molde identifica o recurso na URL (`PATCH /items/:id`) e o `userId` no
 
 **Resolução no Cota4 (2026-08-15, v0.75.0):** regra pura `conferirPosseDoFormulario(idDoFormulario, empresaDaSessaoId)` em `backend/src/services/posseFormularioEmpresa.ts` → sem id: 409 `empresa_nao_identificada`; id de outra: 409 `empresa_divergente`; igual: segue. O `id` continua `optional()` no zod SÓ para a recusa ter código próprio (um 400 "Payload inválido" diria menos); a rota recusa. No front, `corpoSalvar(f, id: string)` exige o id (o `sujo` compara só os campos via `camposSalvar`), `salvar` não dispara sem `original`, e o 409 mostra a mensagem do servidor + `limpar()` + `recarregar()`. **Teste HTTP de rota sem subir o server.ts:** `Fastify() + @fastify/jwt (segredo de teste) + hook onRequest bindRequestContext + registerEmpresaRoutes(server)`, JWT assinado com `server.jwt.sign`, empresa + membro criados via `prismaAdmin`, `server.inject(...)`, `describe.skipIf(!temBanco)` como as outras integrações (`backend/src/api/routes/empresa.integration.spec.ts`). É a receita para testar qualquer rota de tenant de ponta a ponta (guard de sessão + RLS + banco de verdade).
 
+**Resolução no template (2026-08-15):** comentário na rota de escrita do slice de referência (`backend/src/api/routes/items.ts`, sobre o `PATCH /items/:id`): identidade na URL + posse pelo `auth.userId` está certo e é o padrão a copiar; se a identidade vier no body, o campo é obrigatório quando a sessão já tem o recurso e "ausente" é recusa (409 com código próprio), não "então não confiro" — com o teste negativo (id de outro tenant → 409; sem id com sessão → 4xx; id da sessão → segue). Aponta para a receita do Cota4 (`posseFormularioEmpresa.ts` + teste HTTP com `Fastify() + @fastify/jwt + registerXRoutes + inject`).
+
 ## [2026-08-15] cota4 — bug: workflows de deploy não correm typecheck/lint/test
 **Severity:** HIGH
-**Status:** `noted`
+**Status:** `fixed-in-template`
 **Class:** template
 **Stack:** both
 **Inspection:** cota4 `.brief/inspections/2026-08-15-inspection.md` F-06
@@ -1070,9 +1074,11 @@ A constituição manda gate local. Os workflows do Molde (`deploy-frontend.yml`,
 
 **Resolução no Cota4 (2026-08-15, v0.75.0):** um workflow reutilizável `.github/workflows/gates.yml` (`on: workflow_call` + `workflow_dispatch`; Node 24 com `cache: npm`, `npm ci`, `npm run typecheck`, `npm run lint`, `npm test`), e cada workflow de publicação ganha `jobs.gates: { uses: ./.github/workflows/gates.yml }` + `needs: gates` no job que publica (`deploy-frontend`, `deploy-backend`, `deploy-site`, `apk-teste`). Simulado localmente sem `.env` (como no runner): as suites de Postgres se pulam, o resto passa. **A prova de que faltava:** a v0.72.0 do Cota4 subiu com `npm test` vermelho (o guard de marca `check-wordmark` acusava um "Cota4" cru na Home) e ficou 2 dias no ar sem ninguém ver. Receita transplantável para o `provision.ps1`/workflows do Molde tal qual. **Armadilha do primeiro run (v0.75.1):** o gate caiu no runner porque **Prisma 7 não gera o client no `npm ci`** (entrada 2026-06-29 deste arquivo; é por isso que o Coolify roda `prisma generate` no `install_command`) — o typecheck do backend não achava `PrismaClient`. O `gates.yml` precisa de `npx prisma generate` com `working-directory: backend` ANTES do typecheck (não exige `DATABASE_URL`). O `needs: gates` fez o papel: os três deploys ficaram `skipped`. Um gate que nunca rodou no runner ainda não é gate.
 
+**Resolução no template (2026-08-15):** `.github/workflows/gates.yml` reutilizável (`workflow_call` + `workflow_dispatch`; Node 24 com `cache: npm`, `npm ci`, `npx prisma generate` em `backend` ANTES do typecheck, depois `typecheck`, `lint`, `test`), chamado por `deploy-frontend.yml` e `deploy-backend.yml` como `jobs.gates` + `needs: gates` no job que publica. Roda no template puro, sem secret nenhum — é o gate do Molde rodando no Molde (a mesma sessão achou o typecheck do template quebrado desde 30/06; entrada abaixo). Simulado localmente sem `.env`, como no runner: typecheck, lint e test verdes. `molde-brain.md` atualizado (pipeline + gotcha).
+
 ## [2026-08-15] cota4 — gotcha: `persist` do zustand lê `window.localStorage`; stub só de `localStorage` em teste Node desliga o storage em silêncio
 **Severity:** LOW
-**Status:** `noted`
+**Status:** `fixed-in-template`
 **Class:** stack
 **Stack:** both
 
@@ -1080,9 +1086,11 @@ Ao testar um store com `persist` no vitest em ambiente `node` (sem jsdom), `vi.s
 
 **Template impact:** docs de teste do skeleton (quando houver store persistido): "stub de `window` + `localStorage`, importar depois". Meia hora perdida no Cota4 por causa disto.
 
+**Resolução no template (2026-08-15):** o skeleton não tem store persistido nem docs de teste próprios; a receita entrou como bullet na Phase 7 (Write tests) do `AGENTS.md`: stubar `window = { localStorage }` além de `localStorage`, importar os stores depois (dynamic import), `useStore.persist.rehydrate()` para simular o F5.
+
 ## [2026-08-15] cota4 — infra: Coolify passou a exigir POST em `/api/v1/deploy` — o `deploy-backend.yml` de TODOS os filhos quebrou em silêncio
 **Severity:** HIGH
-**Status:** `noted`
+**Status:** `fixed-in-template`
 **Class:** stack
 **Stack:** parolin
 
@@ -1093,6 +1101,8 @@ Conserto (Cota4 v0.75.2, `.github/workflows/deploy-backend.yml`): `-X POST` nos 
 **Raio:** todo app com `deploy-backend.yml` do Molde: parafit, coringao-orcamento, Parafin, mercado (se tiver backend), trajetorias2, taskly… Recibos/paramalhar já descomissionados. Não abrir PR nos irmãos nesta sessão; cada um aplica o `-X POST` no próximo toque (ou o Gustavo passa o `sed` nos sete).
 
 **Template impact:** (1) `molde/.github/workflows/deploy-backend.yml`: `-X POST` nos dois curls + o próprio workflow em `paths`; (2) `provision.ps1`/molde-brain: anotar que a API do Coolify muda sem aviso com o auto-update — o smoke pós-deploy do Cota4 (espera a versão nova no `/health`) é o que transforma isso em vermelho legível.
+
+**Resolução no template (2026-08-15):** `-X POST` nos dois curls de `.github/workflows/deploy-backend.yml` (Cloudflare e `--resolve` na origem) e o próprio workflow + `gates.yml` no filtro `on.push.paths`; `scripts/provision.ps1` também disparava o deploy inicial com GET no mesmo endpoint — virou POST; `molde-brain.md` atualizado (passo 3 do pipeline + gotcha novo). Filhos já provisionados aplicam o `-X POST` no próximo toque (nenhum PR aberto daqui).
 
 ## [2026-08-15] molde — bug: o próprio template estava com os gates vermelhos desde 2026-06-30 (prisma CLI 6 com @prisma/client 7) e ninguém viu
 **Severity:** HIGH

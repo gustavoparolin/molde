@@ -211,6 +211,7 @@ specify self upgrade
 - **Minimum**: one happy-path unit test per service function, one E2E per user-facing flow.
 - **This step was skipped during Recibos development. Never skip it again.**
 - Tests must pass before any commit.
+- Testing a zustand store that uses `persist` under vitest `environment: node`: stub `window = { localStorage: fake }` in addition to `localStorage` (the middleware reads `window.localStorage`; without `window` it silently runs with no storage), import the stores **after** the stubs (dynamic `await import`), and use `useStore.persist.rehydrate()` to simulate F5. Field-note 2026-08-15 (Cota4) has the recipe.
 
 ### Phase 8: Peer review — create a PR
 

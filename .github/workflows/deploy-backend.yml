@@ -13,10 +13,21 @@ on:
       - 'backend/**'
       - 'package.json'
       - 'package-lock.json'
+      # O próprio workflow e o gate que ele chama: sem isto, corrigir o arquivo
+      # não o exercita (foi preciso bump de versão no Cota4 para testar o -X POST).
+      - '.github/workflows/deploy-backend.yml'
+      - '.github/workflows/gates.yml'
   workflow_dispatch:
 
 jobs:
+  # Nada sobe sem os gates verdes no MESMO SHA (inspection 2026-08-15, F-06).
+  # O smoke lá embaixo continua: ele prova que o que subiu FUNCIONA no ar; os
+  # gates provam que o que vai subir está são ANTES de o Coolify começar.
+  gates:
+    uses: ./.github/workflows/gates.yml
+
   deploy:
+    needs: gates
     runs-on: ubuntu-latest
     steps:
       - name: Check required secrets
@@ -43,7 +54,10 @@ jobs:
           # runner IPs currently receive a Cloudflare Managed Challenge here (bot
           # protection at the zone edge — the CF Access service-token headers do not
           # bypass it), so on failure we fall back to calling the origin VPS directly.
-          if curl -s --fail-with-body \
+          # -X POST desde 2026-08-15: o Coolify (auto-atualizado) passou a exigir POST
+          # neste endpoint ({"message":"This endpoint has changed to a POST request."});
+          # o GET que funcionava em 13/08 quebrou o deploy de TODOS os filhos em silêncio.
+          if curl -s -X POST --fail-with-body \
               -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
               -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
               -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
@@ -63,7 +77,7 @@ jobs:
           # is still authenticated by the Coolify API bearer token.
           HOST="${API_URL#https://}"
           echo "Cloudflare path failed (managed challenge?) — falling back to origin ${HOST} @ ${ORIGIN_IP}"
-          curl -sk --fail-with-body \
+          curl -sk -X POST --fail-with-body \
             --resolve "${HOST}:443:${ORIGIN_IP}" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             "${API_URL}${DEPLOY_PATH}"

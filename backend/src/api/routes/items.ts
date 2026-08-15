@@ -55,6 +55,17 @@ export async function registerItemRoutes(server: FastifyInstance): Promise<void>
     reply.send({ item });
   });
 
+  // IDENTIDADE DO RECURSO: aqui ela vem da URL (`:id`) e a posse do `auth.userId` — o
+  // repositório filtra pelos dois, e um id de outro dono vira 404. Isso está certo e é
+  // o padrão a copiar. Se algum dia a identidade vier no BODY (Empresa/tenant, tela de
+  // Ajustes, form cacheado entre telas), o campo é OBRIGATÓRIO quando a sessão já tem o
+  // recurso: "ausente" é recusa (409 com código próprio), não "então não confiro". Um
+  // guard `if (body.id && body.id !== atual.id)` é no-op quando o cliente omite o id —
+  // foi o F-05 da inspection do Cota4 (2026-08-15). Receita pronta lá:
+  // backend/src/services/posseFormularioEmpresa.ts (regra pura) + teste HTTP sem subir
+  // o server: Fastify() + @fastify/jwt + registerXRoutes(server) + server.inject
+  // (backend/src/api/routes/empresa.integration.spec.ts). Teste negativo obrigatório:
+  // id de outro tenant → 409; sem id com sessão → 4xx; id da sessão → segue.
   server.patch("/items/:id", async (request, reply) => {
     const auth = await requireAuth(request, reply);
     if (!auth) return;

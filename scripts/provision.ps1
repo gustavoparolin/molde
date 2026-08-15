@@ -269,7 +269,8 @@ if (-not $dry) {
 }
 
 # ── 9) Initial deploy ─────────────────────────────────────────────────────────
-Call "Coolify deploy" "GET" "$coolUrl/api/v1/deploy?uuid=$appUuid&force=true" $coolHdr $null
+# POST desde 2026-08-15: o Coolify passou a recusar GET aqui ("This endpoint has changed to a POST request.").
+Call "Coolify deploy" "POST" "$coolUrl/api/v1/deploy?uuid=$appUuid&force=true" $coolHdr $null
 
 Write-Host "`n=== Done ($(if ($dry) {'dry-run'} else {'executed'})) ===" -ForegroundColor Green
 Write-Host "Manual step (~30s): add https://$apiHost/auth/google/callback to the shared Google OAuth client." -ForegroundColor Magenta

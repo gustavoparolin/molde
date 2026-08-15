@@ -154,6 +154,8 @@ For slug `<app>`:
    `gh secret set CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` (for `deploy-frontend.yml`).
    `gh secret set COOLIFY_APP_UUID` / `COOLIFY_API_TOKEN` / `COOLIFY_API_URL` / `CF_ACCESS_CLIENT_ID` /
    `CF_ACCESS_CLIENT_SECRET` (for `deploy-backend.yml` — auto-set by step 5 below).
+   Both deploy workflows call `.github/workflows/gates.yml` (typecheck + lint + test on the same SHA) and only
+   publish when it passes (`needs: gates`); the gates job needs no secrets, so it also runs in template mode.
 
 2. **Cloudflare (API):**
    - DNS A/CNAME: `<app>-api` → Coolify host (A if IP, CNAME if hostname).
@@ -177,9 +179,10 @@ For slug `<app>`:
      `NIXPACKS_NODE_VERSION=22`, `S3_*` (if R2), `AI_*` (if AI).
    - **PATCH the app** (the POST endpoint ignores these fields):
      `ports_exposes=3000`, `health_check_path=/health`, `health_check_port=3000`,
-     `install_command="npm install --ignore-scripts && node --experimental-require-module ./node_modules/.bin/prisma generate"`,
+     `install_command="npm install --ignore-scripts && node --experimental-require-module ./node_modules/.bin/prisma generate"`
+     (Prisma 7 does not generate the client on install — the same reason `gates.yml` runs `npx prisma generate` before typecheck),
      `start_command="node --experimental-require-module ./node_modules/.bin/prisma migrate deploy && node --import=tsx src/api/server.ts"`.
-   - Deploy: `GET /api/v1/deploy?uuid=<appUuid>&force=true`.
+   - Deploy: `POST /api/v1/deploy?uuid=<appUuid>&force=true` — **POST since 2026-08-15**: the Coolify auto-update made this endpoint reject GET (`{"message":"This endpoint has changed to a POST request."}`). `provision.ps1` and `deploy-backend.yml` already send POST (see gotcha 16).
 
 4. **Verify:** `GET https://api-<app>.parolin.net/health` → `{"status":"ok"}`; smoke the real Google login.
 
@@ -392,3 +395,22 @@ the container IP.
     creating the Postgres container, so the DB is named correctly from the start.
     **For apps provisioned before 2026-06-30** (parafit, recibos, trajetorias2, paramalhar):
     the DB was renamed manually via `ALTER DATABASE postgres RENAME TO <slug>`. Already done.
+
+16. **Coolify `/api/v1/deploy` is POST-only (since 2026-08-15)** — the Coolify auto-update changed the
+    endpoint; GET now returns `{"message":"This endpoint has changed to a POST request."}` and the backend
+    deploy of every child failed at the "Trigger Coolify redeploy" step (red only inside Actions — the app
+    silently stays on old code). Template fixed: `deploy-backend.yml` sends `-X POST` on both curls (Cloudflare
+    path and `--resolve` origin path) and lists itself in `on.push.paths`; `provision.ps1` sends POST for the
+    initial deploy. **Apps provisioned before 2026-08-15** (parafit, coringao-orcamento, Parafin, mercado,
+    trajetorias2, taskly…) must patch their own workflow. Lesson: the Coolify API changes without notice on
+    auto-update — the post-deploy version gate (`/health` must show the new commit/version) is what turns
+    that into a readable red.
+
+17. **CI gates (fixed as of 2026-08-15)** — until then no Molde workflow ran typecheck/lint/test: the
+    frontend went straight to Pages, the backend to Coolify, smoke only after being live (Cota4 inspection
+    F-06; Cota4 v0.72.0 shipped with `npm test` red for 2 days). Now `.github/workflows/gates.yml`
+    (reusable, `workflow_call` + `workflow_dispatch`, Node 24, `npm ci`, `npx prisma generate` in `backend`
+    BEFORE typecheck, then typecheck/lint/test) is called by both deploy workflows with `needs: gates`.
+    It also runs on the template itself — which is how the template's own typecheck turned out to have been
+    broken from 2026-06-30 to 2026-08-15 (prisma CLI 6 with @prisma/client 7; field-note 2026-08-15).
+    Integration specs that need Postgres must `describe.skipIf(!temBanco)`; Playwright is a separate card.

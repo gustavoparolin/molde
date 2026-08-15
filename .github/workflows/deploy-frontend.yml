@@ -13,7 +13,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Nada sobe sem os gates verdes no MESMO SHA (inspection 2026-08-15, F-06).
+  gates:
+    uses: ./.github/workflows/gates.yml
+
   deploy:
+    needs: gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

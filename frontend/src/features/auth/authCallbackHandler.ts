@@ -23,6 +23,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   }
 }
 
+// Portas de token deste skeleton: handleOAuthCallback (OAuth) e mockGoogleSignIn (mock).
+// Ambas entram por `useAuthStore.setUser` — porta nova (deep link, demo, magic link)
+// também entra por lá. A regra completa está no comentário de `setUser` (authStore.ts).
 export function handleOAuthCallback(token: string): void {
   const payload = decodeJwtPayload(token);
   setApiAuthContext({ token });
