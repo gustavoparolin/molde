@@ -1181,6 +1181,29 @@ O Gustavo trocou o flagship do Mac Studio: saiu o `qwen3.6:latest`, entrou o `qw
 
 **Resolvido no mesmo dia (16/08), itens (b) e (c) — e a causa raiz:** o nome do modelo saiu do `.env` e do código e virou **configuração publicada**. `backend/src/config/modelos.ts` (novo no template e nos quatro filhos) lê `https://parolin.net/modelos.json` no boot e revalida a cada 15 min, com precedência **env > remoto > cópia embutida**. Quem publica é o Models-Benchmark, a partir da medição diária com chamada real: **modelo que não respondeu não é publicado**, e o papel cai para o próximo da linha de sucessão declarada em `stack-modelos.json`. O `.env.example` deixou de trazer nome de modelo como valor a copiar, e `localVisao` virou papel de primeira classe. O item (a) — portar o `parseJsonLoose.ts` — **continua aberto**, e é o que sobra de verdade: enquanto ele não existir no template, app novo que dê `JSON.parse` na resposta do modelo local quebra na cerca markdown.
 
+## [2026-08-16] cota4 + coringao — gotcha: imagem grande demais faz o modelo local ler MENOS (e derruba o runner MLX)
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** stack
+**Stack:** parolin
+
+Medido com 8 capturas de tela reais (1,3 a 8,3 MP), 3 rodadas, 102 fatos de gabarito — `Models-Benchmark/benchmarks/tradingview-20260816/RESULTADOS-GRANDE.md`. **Até 4 MP os modelos locais acertam 72-83%; acima de 4 MP acertam ZERO**, sem exceção. Não é curva, é penhasco.
+
+**A causa foi medida, não deduzida:** o encoder de visão satura em **~4.100 tokens por imagem**. Mandando a MESMA imagem em larguras crescentes e lendo `prompt_eval_count`: 358 → 1.255 → 2.750 → 4.139 → **4.139**. De 2560px em diante, mais pixels não viram mais informação — a imagem é espremida no mesmo orçamento de patches e o texto pequeno é destruído antes de o modelo raciocinar. Mandar a foto MAIOR faz o modelo ler MENOS.
+
+Duas consequências que valem para qualquer app do template:
+
+1. **Aumentar `OLLAMA_CONTEXT_LENGTH` não resolve nada disso.** A imagem ocupa 4.139 de 32.768 tokens — 12% do contexto. O contexto controla quanto CABE; o encoder decide quanto PRODUZ. E subir para 128k estouraria o cache KV nos ~30GB da GPU do Mac, degradando toda chamada.
+2. **O `qwen3.8:27b-mlx` derruba o runner com imagem grande:** `HTTP 500 {"error":"mlx runner failed: panic: mlx: [metal::…]"}`, reproduzível 12/12 acima de 8 MP, sempre em 0,7 s, e que some com a imagem reduzida. Como o Mac costuma ser a REDE DE SEGURANÇA da cadeia, isso falha exatamente quando os provedores de nuvem já falharam — o pior momento possível.
+
+**A lacuna encontrada:** cota4 e coringao limitavam o tamanho **só no frontend** (`FotoUpload.tsx`, 2048px). Garantia que mora no cliente não é garantia — curl, versão antiga em cache na loja ou integração futura entregam a foto crua de 12 MP, e o único freio no servidor era `fileSize: 10 MB`, que uma foto de celular cabe com folga. O Parafin já estava certo (`ocrService.ts` com `sharp`, 1280px).
+
+**Corrigido nos dois (v0.75.5 e v0.18.7)** com `backend/src/services/prepararImagem.ts`: aplica orientação EXIF e limita o lado maior a 2048px — **o mesmo teto do frontend, de propósito**, para que o caminho normal passe sem re-encodar um pixel e só o caminho anômalo seja tocado. Custo: ~115 ms para reduzir 8,3 MP. De brinde, a auto-rotação EXIF faz foto tirada de lado chegar na vertical (1980×1115 → 1115×1980).
+
+**Template impact:** portar `prepararImagem.ts` + spec para o Molde, e usá-lo em QUALQUER rota que mande imagem para IA. A regra geral: **o servidor normaliza o que a IA vê; o storage guarda o original**, que é o comprovante. E o teto vive no backend, não numa promessa do frontend.
+
+---
+
 **Três decisões deste desenho, para quem for replicá-lo:** (1) o JSON carrega **só nomes de modelo** — nunca `baseUrl`, chave ou ordem de provedores; é arquivo público que os apps obedecem, e com só nomes o pior caso é chamar modelo inexistente e cair para o próximo provedor, em vez de mandar os prompts da stack para um host escolhido por terceiros. (2) A **cópia embutida** em cada app não é redundância boba: o app sobe e funciona com o site fora do ar; o arquivo remoto melhora o valor, não é condição de boot. (3) A **env continua valendo como override** para experimentar sem deploy — o que ela não pode mais ser é cópia do valor padrão em produção, porque é exatamente a cópia que envelhece.
 
 ---
