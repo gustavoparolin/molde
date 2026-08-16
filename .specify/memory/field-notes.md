@@ -1164,3 +1164,19 @@ Bônus operacional: `paramalhar` local estava 1 commit **atrás** do origin (nad
 **Template impact (adendo):** o `deprovision.ps1` termina com o poll do item 8 e recusa "concluído" enquanto o GET não der 404. O `provision.ps1`, ao criar bucket com domínio público, deveria escrever `S3_PUBLIC_URL` **e** `R2_PUBLIC_BASE_URL` com o mesmo valor (a divergência entre os dois é o bug silencioso do item 9).
 
 ---
+
+## [2026-08-16] stack Parolin — gotcha: o novo modelo local cerca o JSON em markdown mesmo com `format: "json"`, e o Molde não tem o parser que tira a cerca
+**Severity:** HIGH
+**Status:** `noted`
+**Class:** stack
+**Stack:** parolin
+
+O Gustavo trocou o flagship do Mac Studio: saiu o `qwen3.6:latest`, entrou o `qwen3.8:27b-mlx` (MLX, 18GB, visão nativa, muito mais rápido — ~12 s na primeira chamada e ~4 s quente, contra ~42 s do antecessor, medido com geração real). O default do slot local da `cadeiaIa.ts` foi atualizado no template e nos quatro filhos. Dois aprendizados que sobrevivem a esta troca específica:
+
+1. **O `qwen3.8` devolve o JSON embrulhado em cerca markdown (```` ```json … ```` ) MESMO com `format: "json"` no `/api/chat`.** O `gemma4:26b` devolve puro, então esse comportamento não é "do Ollama", é do modelo — e muda quando o modelo muda. O Cota4 e o coringao não quebram porque toda resposta passa por `parseJsonLoose.ts` (tira cerca, e se ainda falhar recorta do primeiro `{` ao último `}`). **O Molde não tem esse arquivo**, então app novo do template que aponte para o slot local e dê `JSON.parse` direto quebra no primeiro uso, com erro de parse que parece bug do próprio app.
+
+2. **Trocar o modelo no Mac quebra em silêncio todo `.env` que nomeia o modelo antigo.** O `qwen3.6:latest` estava escrito em `cota4/.env`, `coringao-orcamento/.env` e `Parafin/.env.production.local`; no instante do `ollama rm`, o slot local dos três passou a apontar para modelo inexistente. Não vira erro visível: a cadeia só cai para o próximo provedor, ou seja, o app fica mais caro/lento sem ninguém perceber. Quem detecta é o `daily_availability.py` do Models-Benchmark (entrada "sumiu — `qwen3.6:latest`"), não o app.
+
+**Template impact:** (a) portar `parseJsonLoose.ts` + spec do Cota4 para o Molde, já que qualquer app do template pode cair no slot local; (b) o `.env.example` do Molde deveria dizer explicitamente que o nome do modelo local é **fotografia** e tem de ser conferido em `/api/tags` (mesma regra que já vale para modelo de nuvem); (c) o Molde ainda não tem `AI_LOCAL_MODEL_VISAO` como caminho de primeira classe — agora que o modelo local principal enxerga, vale reavaliar se o slot local deve ser pulado no caminho de FOTO.
+
+---

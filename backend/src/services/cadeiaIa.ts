@@ -4,12 +4,22 @@
 //
 //   Gemini (todas as chaves) · Ollama local · Poe
 //
-// POR QUE ESTA ORDEM: o Gemini free tier é grátis e enxerga imagem — hoje é o
-// único caminho gratuito com visão nesta stack, desde que a Z.AI aposentou o
-// `glm-4v-flash` e passou a cobrar pelos modelos de visão (auditado em
-// 2026-07-29, ver `providers/zai.md` no Models-Benchmark). O Ollama do Mac
-// Studio é grátis mas lento (~42 s) e depende do Mac ligado. O Poe é rápido
+// POR QUE ESTA ORDEM: o Gemini free tier é grátis e enxerga imagem. O Ollama do
+// Mac Studio é grátis e depende da máquina ligada; desde 2026-08-16 roda o
+// `qwen3.8:27b-mlx`, que é MUITO mais rápido que o antigo `qwen3.6` (~12 s na
+// primeira chamada, ~4 s com o modelo já quente, contra ~42 s) e tem VISÃO
+// NATIVA — até então o Gemini era o único caminho gratuito com visão nesta
+// stack, porque a Z.AI aposentou o `glm-4v-flash` e passou a cobrar pelos
+// modelos de visão (auditado em 2026-07-29, ver `providers/zai.md` no
+// Models-Benchmark). A visão do modelo local só foi medida em imagem sintética,
+// não em foto de cliente, por isso a ordem segue como está. O Poe é rápido
 // (~2 s) e consome a assinatura do Gustavo, por isso fica por último.
+//
+// ARMADILHA DO MODELO LOCAL: o `qwen3.8` devolve o JSON dentro de cerca
+// markdown (```json …```) MESMO com `format: "json"` — o `gemma4:26b` não faz
+// isso. Quem for dar `JSON.parse` na resposta precisa tirar a cerca antes; o
+// Cota4 e o coringao fazem isso em `parseJsonLoose.ts`, que este template ainda
+// não traz.
 //
 // PARA INVERTER (app com usuário esperando na frente do cliente, onde velocidade
 // vale mais que economia): troque a ordem em `cadeiaDeProvedores` para
@@ -97,7 +107,7 @@ function provedorLocal(): Provedor[] {
       tipo: "ollama",
       rotulo: "mac",
       baseUrl,
-      modelo: process.env.AI_LOCAL_MODEL ?? "qwen3.6:latest",
+      modelo: process.env.AI_LOCAL_MODEL ?? "qwen3.8:27b-mlx",
       // OBRIGATÓRIO para o caminho da FOTO: mandar imagem a um modelo de texto
       // não dá erro — ele responde qualquer coisa, que é a pior falha possível.
       // Sem esta variável, o provedor local deve ser PULADO quando a entrada é
