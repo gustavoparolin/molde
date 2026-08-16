@@ -40,6 +40,8 @@
 // "confirmados funcionando" morreram em dois meses sem ninguém perceber, porque
 // teste com mock não pega modelo morto.
 
+import { modelo } from "../config/modelos.js";
+
 export type Provedor =
   | {
       tipo: "nuvem";
@@ -79,8 +81,8 @@ function provedoresGemini(): Provedor[] {
     rotulo: lista.length > 1 ? `gemini#${i + 1}` : "gemini",
     baseUrl: base,
     chave,
-    modelo: process.env.AI_MODEL,
-    modeloAlternativo: process.env.AI_MODEL_FALLBACK,
+    modelo: modelo("gemini"),
+    modeloAlternativo: modelo("geminiFallback"),
   }));
 }
 
@@ -93,8 +95,8 @@ function provedorPoe(): Provedor[] {
       rotulo: "poe",
       baseUrl: process.env.POE_BASE_URL ?? POE_BASE,
       chave,
-      modelo: process.env.POE_MODEL ?? "gpt-5.4-mini",
-      modeloAlternativo: process.env.POE_MODEL_FALLBACK ?? "claude-haiku-4.5",
+      modelo: modelo("poe"),
+      modeloAlternativo: modelo("poeFallback"),
     },
   ];
 }
@@ -107,12 +109,15 @@ function provedorLocal(): Provedor[] {
       tipo: "ollama",
       rotulo: "mac",
       baseUrl,
-      modelo: process.env.AI_LOCAL_MODEL ?? "qwen3.8:27b-mlx",
+      modelo: modelo("local"),
       // OBRIGATÓRIO para o caminho da FOTO: mandar imagem a um modelo de texto
       // não dá erro — ele responde qualquer coisa, que é a pior falha possível.
-      // Sem esta variável, o provedor local deve ser PULADO quando a entrada é
-      // imagem (é o que `visionService` do Cota4 faz).
-      modeloVisao: process.env.AI_LOCAL_MODEL_VISAO,
+      // Sem um nome aqui, o provedor local deve ser PULADO quando a entrada é
+      // imagem (é o que `visionService` do Cota4 faz). Desde 2026-08-16 o modelo
+      // local principal enxerga sozinho, então este papel deixou de ser um
+      // modelo à parte — mas continua explícito, porque o dia em que o principal
+      // voltar a ser cego, ninguém vai lembrar desta regra.
+      modeloVisao: modelo("localVisao"),
     },
   ];
 }

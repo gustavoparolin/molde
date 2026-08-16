@@ -6,6 +6,7 @@ import jwt from "@fastify/jwt";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerItemRoutes } from "./routes/items.js";
 import { recordRequest, getMetricsSummary } from "../observability/metrics.js";
+import { estadoDosModelos, iniciarModelos } from "../config/modelos.js";
 
 const server = Fastify({ logger: true });
 
@@ -67,6 +68,13 @@ server.get("/health", async () => ({
 server.get("/admin/metrics", async () => ({ metrics: getMetricsSummary() }));
 
 const port = Number(process.env.PORT ?? 3000);
+
+// Os nomes de modelo vêm de https://parolin.net/modelos.json, com revalidação a
+// cada 15 min. Nunca bloqueia o boot: timeout de 2 s e, se falhar, valem os
+// nomes embutidos em `config/modelos.ts`. O log diz qual das duas origens venceu
+// — no meio de um incidente, essa é a primeira pergunta.
+await iniciarModelos();
+server.log.info(estadoDosModelos(), "modelos de IA");
 
 server.listen({ port, host: "0.0.0.0" }).catch((error) => {
   server.log.error(error);
