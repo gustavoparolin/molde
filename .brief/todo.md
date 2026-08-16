@@ -26,7 +26,57 @@
 
 </details>
 
-_(vazio — nenhum passo pendente)_
+## 🧑 1. Publicar o `modelos.json` no site ⏳ — sem isto, os apps seguem na cópia embutida
+
+O arquivo que manda nos nomes de modelo da stack já está commitado em `web/parolin`, mas **não está no ar**: o Cloudflare Pages só publica depois do push.
+
+- Terminal, na pasta `C:\Users\gusta\OneDrive\web\parolin`: `git push`
+- Aguardar ~1 min e conferir se abre: [parolin.net/modelos.json](https://parolin.net/modelos.json)
+- Não precisa mexer em nada no Cloudflare — é o mesmo deploy do site
+
+## 🧑 2. Push dos cinco backends ⏳ — cada push dispara o deploy do app
+
+Ordem sugerida (do menos crítico para o mais): `molde`, `parafit`, `Parafin`, `coringao-orcamento`, `cota4`. Em cada pasta: `git push`.
+
+- Depois do deploy de cada um, conferir nos **Logs** do app no [Coolify](https://coolify.parolin.net) a linha `modelos de IA` — ela diz `origem: "remoto"` (leu o parolin.net) ou `origem: "embutido"` (não leu, e está usando a cópia local — o app funciona igual, mas a troca automática não chega nele)
+
+## 🧑 3. Apagar as envs de modelo no Coolify 🔴 — só DEPOIS do passo 2
+
+Enquanto elas existirem, mandam mais que o arquivo (precedência env > remoto), e são exatamente as cópias que envelheceram e deixaram três apps chamando modelo apagado. Fazer **só depois** que o app já estiver rodando com o código novo — assim a volta atrás continua possível.
+
+Em [Coolify](https://coolify.parolin.net) → **Projects** → app → aba **Environment Variables**, apagar (produção **e** preview):
+
+```
+AI_LOCAL_MODEL
+AI_LOCAL_MODEL_VISAO
+AI_MODEL
+AI_MODEL_FALLBACK
+```
+
+- **cota4** (produção + preview) · **coringao-orcamento** (produção + preview) · **parafin** (produção)
+- **NÃO apagar** `AI_API_KEY`, `POE_API_KEY`, `AI_BASE_URL`, `AI_LOCAL_BASE_URL`, `AI_LOCAL_TIMEOUT_MS`, `AI_CLOUD_TIMEOUT_MS` — esses são segredo e ambiente, continuam em env
+- Clicar **Redeploy** em cada app e conferir de novo a linha `modelos de IA` nos Logs
+
+## 🧑 4. Chave do Resend para o relatório diário chegar por e-mail ⏳
+
+O relatório está pronto e roda todo dia às 09:00 junto com a medição, mas hoje ele é **gravado em disco** em vez de enviado, porque não existe `RESEND_API_KEY` em lugar nenhum (nem no cofre, nem no `.env`, nem no Coolify). Para ligar:
+
+- Criar/copiar a chave em [Resend → API keys](https://resend.com/api-keys)
+- Conferir em [Resend → Domains](https://resend.com/domains) se `parolin.net` está verificado; se não estiver, usar um domínio que esteja e ajustar o remetente abaixo
+- Abrir `C:\Users\gusta\.config\molde\provision.env` e acrescentar as linhas:
+
+```
+RESEND_API_KEY=re_sua_chave_aqui
+REPORT_EMAIL_FROM=Models-Benchmark <modelos@parolin.net>
+REPORT_EMAIL_TO=gumela@gmail.com
+```
+
+- Testar sem esperar o dia seguinte: no terminal, `cd X:\Obsidian\Brain\Projects\Models-Benchmark` e `python scripts\daily_availability.py` — a última linha do log diz se enviou
+- Enquanto não houver chave, o relatório do dia fica legível em `X:\Obsidian\Brain\Projects\Models-Benchmark\scripts\.report-nao-enviado.html` (abrir com duplo clique)
+
+## 🤖 5. Rodar o spike de manuscrito no coringão ⏳ — o teste que decide a visão local
+
+O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manuscrito é outra coisa**: é onde o `qwen3-vl` fez 0/25 e o Gemini 81,6%. O `spike-extracao.ts` já está apontado para o modelo novo e as 5 fotos reais estão no repositório. Enquanto não rodar, a rota local de FOTO está ligada com base em teste sintético.
 
 ---
 
