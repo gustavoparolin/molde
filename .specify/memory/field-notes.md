@@ -1207,3 +1207,15 @@ Duas consequências que valem para qualquer app do template:
 **Três decisões deste desenho, para quem for replicá-lo:** (1) o JSON carrega **só nomes de modelo** — nunca `baseUrl`, chave ou ordem de provedores; é arquivo público que os apps obedecem, e com só nomes o pior caso é chamar modelo inexistente e cair para o próximo provedor, em vez de mandar os prompts da stack para um host escolhido por terceiros. (2) A **cópia embutida** em cada app não é redundância boba: o app sobe e funciona com o site fora do ar; o arquivo remoto melhora o valor, não é condição de boot. (3) A **env continua valendo como override** para experimentar sem deploy — o que ela não pode mais ser é cópia do valor padrão em produção, porque é exatamente a cópia que envelhece.
 
 ---
+
+---
+
+## [2026-08-16] parafit — infra: as actions do template ainda apontavam para o Node 20 depreciado (checkout@v4, setup-node@v4, wrangler-action@v3)
+**Severity:** HIGH
+**Status:** `noted`
+
+Todo run de `gates.yml` e `deploy-frontend.yml` imprimia `Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, cloudflare/wrangler-action@v3`. Hoje só um aviso — o runner força Node 24 —, mas é exatamente o padrão do `-X POST` do Coolify de 2026-08-15: quando o GitHub remove o fallback, o deploy de **todos** os filhos quebra de uma vez e em silêncio, sem nenhuma mudança do nosso lado. As majors atuais são `actions/checkout@v7`, `actions/setup-node@v7` e `cloudflare/wrangler-action@v4`; no parafit a subida foi feita em 7636957 e os dois deploys (Pages e Coolify) passaram verdes, sem o aviso no log.
+
+Breaking changes conferidos um a um, nenhum nos alcança: checkout **v5** trocou o runtime para Node 24 (exige runner ≥ v2.327.1 — irrelevante em runner hospedado), **v6** passou a persistir credenciais em arquivo separado, **v7** bloqueia checkout de PR de fork em `pull_request_target`/`workflow_run` (os workflows do Molde rodam em `push`/`workflow_call`/`workflow_dispatch`); setup-node **v5** liga cache automático quando há `packageManager` no `package.json` (desligável com `package-manager-cache: false`) e **v6** limita esse auto-cache ao npm — o `gates.yml` já declara `cache: npm` explicitamente; wrangler-action **v4** só muda o Wrangler default para v4, que mantém `pages deploy <dir> --project-name=`.
+
+**Template impact:** subir as três referências em `molde/.github/workflows/gates.yml` e `deploy-frontend.yml` e propagar aos filhos já provisionados (`.github/workflows/` é copiado, não referenciado — cada app carrega sua própria cópia). Vale criar o hábito de reler os avisos amarelos do run: eles são o aviso prévio da quebra, e ninguém os lê porque o run está verde.
