@@ -15,7 +15,8 @@
     "db:migrate": "npm run db:migrate --workspace backend"
   },
   "overrides": {
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "deepmerge-ts": "^8.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.2",
