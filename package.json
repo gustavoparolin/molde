@@ -12,7 +12,8 @@
     "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend",
     "lint": "npm run lint --workspace backend && npm run lint --workspace frontend",
     "test": "npm run test --workspace backend && npm run test --workspace frontend",
-    "db:migrate": "npm run db:migrate --workspace backend"
+    "db:migrate": "npm run db:migrate --workspace backend",
+    "relock": "node scripts/relock.mjs"
   },
   "overrides": {
     "esbuild": "^0.28.1",

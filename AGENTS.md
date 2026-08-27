@@ -321,6 +321,23 @@ frontend:
 - Every secret (DB URL, JWT secret, Google OAuth, R2 keys, AI API keys) goes to Coolify envs.
 - Build-time frontend config (`VITE_API_BASE_URL`) is injected by the GitHub Action, not hardcoded.
 
+### Dependency alerts — fix them with `npm run relock`, not `npm audit fix`
+
+`npm audit fix` "solves" a transitive alert by whatever move it can find, and that move is sometimes a **major downgrade**. Real case (2026-08-27, all five Molde repos at once): `deepmerge-ts` had a high advisory reachable through `prisma → @prisma/config → deepmerge-ts`. `@prisma/config` pins the exact version `7.1.5` — still true in 7.10.0, the latest — and the advisory is only fixed in `8.0.0`, so `npm audit fix` proposed rolling Prisma **7.x back to 6.12**. Taking that is worse than the vulnerability. The right fix is an `overrides` entry in the root `package.json`, the same pattern already used for `esbuild`.
+
+**The trap that makes this hard:** npm 11 silently ignores a newly added `overrides` while a `node_modules` directory is present. It rebuilds the ideal tree from the physical tree already on disk and answers `up to date` in under a second, having re-resolved nothing. Deleting `package-lock.json` does not help, nor does deleting the hidden lockfile at `node_modules/.package-lock.json`, nor `npm install --package-lock-only`, nor even deleting the whole `node_modules` and reinstalling — that last one reinstalls from the stale lock, which already carries the vulnerable version resolved.
+
+`scripts/relock.mjs` is the way out: it resolves in a throwaway directory holding only the `package.json` files, so npm is forced to consult the registry, then brings the lock back and syncs the tree.
+
+```bash
+npm run relock -- --dry-run   # show what would change, write nothing
+npm run relock                # resolve, write the lock, sync node_modules, generate Prisma Client, audit
+```
+
+Two things it handles for you, both of which cost real time when done by hand: recreating the tree **wipes the generated Prisma Client**, and typecheck then fails claiming `@prisma/client` has no exported member `PrismaClient` — that looks like an update regression and is not; and `npm audit` belongs **after** the bump too, because raising a minor can make the audit *worse* (in cota4, `@capacitor/cli` 8.4.2 → 8.5.0 pulled `xcode@3.0.1 → uuid@7.0.3` and three fresh moderate alerts, fixed with a scoped nested override).
+
+As a side effect the clean resolution also raises everything that had fallen behind **inside the declared semver** — the `Wanted` column of `npm outdated` — so a separate `npm update` is unnecessary. Majors are never touched: those need a human looking at the screen.
+
 ---
 
 ## 8. Deep reference documents

@@ -44,6 +44,15 @@ npm run dev:web                                       # frontend (:5173) — out
 Sem OAuth configurado, entre pelo atalho **Dev: entrar sem OAuth** na tela de login (mock). O esqueleto
 roda **mesmo sem banco** (fallback in-memory nos repositórios) — útil para um smoke rápido.
 
+### Alerta de segurança em dependência? `npm run relock`
+
+```bash
+npm run relock -- --dry-run   # mostra o que mudaria, não grava nada
+npm run relock                # resolve limpo, grava o lock, sincroniza, gera o Prisma Client e audita
+```
+
+O `npm audit fix` resolve alerta em dependência transitiva com o movimento que ele achar — e às vezes esse movimento é **downgrade de major** (foi o caso do `deepmerge-ts`, que ele "corrigia" voltando o Prisma de 7.x para 6.12). O caminho certo é um `overrides` no `package.json` raiz, mas o npm 11 **ignora `overrides` novo enquanto existir `node_modules`** na pasta: ele reconstrói a árvore da instalação física e responde `up to date` sem re-resolver nada. O `relock` resolve num diretório que só tem os `package.json`, onde o npm é obrigado a consultar o registry, e traz o lock de volta. De brinde, sobe tudo que estava atrasado dentro do semver declarado — major nenhum é tocado. Detalhes e o histórico do caso em [AGENTS.md](AGENTS.md) § 7 e em `.specify/memory/field-notes.md`.
+
 A fatia de referência é o **`Item`** (model Prisma → repository → service → route → store → page). Copie
 esse padrão 1:1 para as entidades do seu domínio.
 
