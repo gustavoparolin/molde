@@ -1219,3 +1219,34 @@ Todo run de `gates.yml` e `deploy-frontend.yml` imprimia `Node.js 20 is deprecat
 Breaking changes conferidos um a um, nenhum nos alcança: checkout **v5** trocou o runtime para Node 24 (exige runner ≥ v2.327.1 — irrelevante em runner hospedado), **v6** passou a persistir credenciais em arquivo separado, **v7** bloqueia checkout de PR de fork em `pull_request_target`/`workflow_run` (os workflows do Molde rodam em `push`/`workflow_call`/`workflow_dispatch`); setup-node **v5** liga cache automático quando há `packageManager` no `package.json` (desligável com `package-manager-cache: false`) e **v6** limita esse auto-cache ao npm — o `gates.yml` já declara `cache: npm` explicitamente; wrangler-action **v4** só muda o Wrangler default para v4, que mantém `pages deploy <dir> --project-name=`.
 
 **Template impact:** subir as três referências em `molde/.github/workflows/gates.yml` e `deploy-frontend.yml` e propagar aos filhos já provisionados (`.github/workflows/` é copiado, não referenciado — cada app carrega sua própria cópia). Vale criar o hábito de reler os avisos amarelos do run: eles são o aviso prévio da quebra, e ninguém os lê porque o run está verde.
+
+## [2026-08-27] [molde + 4 filhos] — deps: `overrides` novo é silenciosamente ignorado pelo npm 11 quando `node_modules` existe
+
+**Severity:** HIGH
+**Status:** `noted`
+
+Os cinco repos (molde, Parafin, coringao-orcamento, cota4, parafit) tinham o **mesmo** alerta high do Dependabot: `deepmerge-ts` com stack exhaustion ao mesclar grafos recursivos. Ele entra por `prisma → @prisma/config → deepmerge-ts`, e o `@prisma/config` **pina a versão exata `7.1.5`** — inclusive na 7.10.0, a mais recente. Como o advisory só é corrigido em `8.0.0`, o `npm audit fix` propõe a única saída que ele conhece: **downgrade do Prisma 7.x → 6.12.0**, um major para trás. Aceitar isso é pior que a vulnerabilidade.
+
+A correção certa é `overrides: { "deepmerge-ts": "^8.0.0" }` no `package.json` raiz — o mesmo padrão que o template já usa para o `esbuild`. Validado de verdade, não por dedução: `prisma --version` e `prisma validate` carregam o `@prisma/config` (o consumidor do `deepmerge-ts`) e rodam normalmente com a 8.0.2 forçada por cima do pin. O `npm ls` marca `invalid: "7.1.5" from node_modules/@prisma/config` — isso é o aviso **esperado** de um override sobre pin exato, não um erro.
+
+**A pegadinha que custou o diagnóstico, e é o motivo real desta entrada:** o npm 11 **ignora um `overrides` recém-adicionado** enquanto houver `node_modules` na pasta. Ele reconstrói a árvore ideal a partir da árvore física já instalada e responde `up to date` em menos de um segundo, sem re-resolver nada. Não adianta: apagar o `package-lock.json`, apagar também o hidden lockfile `node_modules/.package-lock.json`, rodar `npm install --package-lock-only`, nem **apagar o `node_modules` inteiro e reinstalar** — esse último reinstala a partir do lock antigo, que já traz a versão vulnerável resolvida. Em `X:` sobre OneDrive, o `rm -rf node_modules` levou **6m37s** para no fim não resolver nada. Um projeto de teste vazio com o mesmo `package.json` aplica o override na hora, o que confirma que o mecanismo funciona e o problema é puramente o estado local.
+
+**A receita que funciona** — gerar o lock por resolução limpa, num diretório que só tem os `package.json`, e trazê-lo de volta:
+
+```
+TMP=$(mktemp -d)
+cp package.json $TMP/                      # e o package.json de cada workspace,
+mkdir -p $TMP/backend $TMP/frontend        # preservando a estrutura de pastas
+cp backend/package.json $TMP/backend/
+cp frontend/package.json $TMP/frontend/
+cd $TMP && npm install --package-lock-only # resolve do registry, sem node_modules por perto
+cp $TMP/package-lock.json <repo>/          # e entao `npm install` no repo sincroniza a arvore
+```
+
+De brinde, essa resolução limpa já sobe tudo que estava atrasado **dentro do semver declarado** (o "Wanted" do `npm outdated`), o que dispensa um `npm update` separado.
+
+**Dois efeitos colaterais que valem o aviso.** (1) Recriar o `node_modules` **apaga o Prisma Client gerado**, e o typecheck quebra logo em seguida com `Module '"@prisma/client"' has no exported member 'PrismaClient'` — parece regressão do update e não é; rode `prisma generate` antes de culpar a subida. (2) No cota4, subir `@capacitor/cli` 8.4.2 → 8.5.0 (minor, dentro do semver) **introduziu três alertas moderate novos** via `xcode@3.0.1 → uuid@7.0.3`, e não existe `@capacitor/cli` corrigido — 8.5.0 é a última estável e está dentro do range vulnerável. Resolvido com override aninhado `xcode: { uuid: ^11.1.1 }`, escopo mínimo: o `xcode` faz **uma** chamada, `uuid.v4()` em `pbxProject.js:90`, verificada carregando o módulo com a versão nova. Lição geral: subir minor pode **piorar** o audit, então rode `npm audit` depois da subida, não só antes.
+
+**Template impact:** o `overrides: { "deepmerge-ts": "^8.0.0" }` já está no `package.json` do Molde e nasce com todo app novo. Vale revisar quando o `@prisma/config` soltar versão que despine o `deepmerge-ts` — aí o override sai. E a receita do lock limpo merece virar script no template (`scripts/relock.sh`), porque toda subida de segurança futura vai esbarrar na mesma pegadinha.
+
+---
