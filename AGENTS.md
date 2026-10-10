@@ -246,6 +246,14 @@ npm test              # Vitest unit tests
 npx playwright test   # E2E, only when both servers are running
 ```
 
+```bash
+# Lighthouse — Medium+ features that touch a public page or the login screen; always before/after a site migration
+# recipe, reading guide and targets: global skill `pagespeed-review` (C:\Users\gusta\.claude\skills\pagespeed-review\SKILL.md)
+npm run build --workspace frontend && npm run preview --workspace frontend   # then, in another shell:
+npx --yes lighthouse@latest "http://localhost:4173/" --output=json --output=html --output-path=./lh-mobile --chrome-flags="--headless=new" --quiet
+# mobile targets (Performance / Accessibility / Best Practices / SEO): public page >= 90/100/100/100; login >= 85/100/100/100; before/after numbers go in CHANGELOG
+```
+
 **Never commit if any gate fails.** Fix the issue, then commit.
 
 ### The gates are necessary, not sufficient — test the REAL PATH

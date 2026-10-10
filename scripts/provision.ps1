@@ -230,9 +230,13 @@ if ($AllowedEmails) {
   # Google account even momentarily (see molde-brain.md §Auth flow for why this matters).
   $envs["ALLOWED_EMAILS"] = $AllowedEmails
 }
+# is_buildtime=false for everything except NIXPACKS_* (read by Nixpacks at build). The Coolify
+# API (4.4.6, ApplicationsController create_env) defaults is_buildtime AND is_runtime to TRUE, which turns every secret into a docker --build-arg baked into the image
+# layers (readable with `docker history`). Runtime-only is what the backend needs: prisma generate
+# reads only the schema; migrate deploy runs in the start command (field-notes 2026-10-10).
 foreach ($k in $envs.Keys) {
   Call "Coolify env $k" "POST" "$coolUrl/api/v1/applications/$appUuid/envs" $coolHdr `
-    @{ key = $k; value = $envs[$k]; is_preview = $false }
+    @{ key = $k; value = $envs[$k]; is_preview = $false; is_buildtime = ($k -like "NIXPACKS_*"); is_runtime = ($k -notlike "NIXPACKS_*") }
 }
 
 # ── 7) App build config — port + Node 22 workaround for Prisma 7 ─────────────

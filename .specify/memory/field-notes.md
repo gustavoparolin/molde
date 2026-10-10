@@ -1260,3 +1260,86 @@ Ao zerar dois alertas do Dependabot no `mysql2` (transitivo do `prisma` 7.10, qu
 O que funciona: subir minors com `npm install pacote@x.y.z -w workspace` (nunca `npm update` num repo com overrides); e, quando um override não pegar, apagar `package-lock.json` **e** o `node_modules` da raiz e de todos os workspaces, instalar do zero, e conferir com `npm ls <pacote>` que o override aparece como `invalid: "<pin>" from <dependente>` (é assim que o npm sinaliza override aplicado). Depois do reinstall do zero é preciso `npx prisma generate`, senão typecheck e specs de integração quebram com `Cannot find module '.prisma/client/default'`.
 
 **Template impact:** vale uma linha no `CLAUDE.md` do Molde na parte de dependências: "minors via `npm install x@v -w ws`; `npm update` está proibido em repo com overrides". Os cinco filhos usam o mesmo padrão de override para `deepmerge-ts` e `uuid`, então o risco é igual em todos.
+
+
+## [2026-09-12] paratrade — pattern: `node:sqlite` (DatabaseSync) substitui better-sqlite3 sem módulo nativo
+**Severity:** LOW
+**Status:** `noted`
+
+App headless em `node:24-alpine` precisava de SQLite. `better-sqlite3` exige compilar módulo nativo (python/make/g++ na imagem) ou torcer para o prebuild musl existir. O `node:sqlite` embutido (Node ≥ 22.13/24) tem API síncrona igualzinha (`new DatabaseSync(path)`, `prepare().run/get/all`), suporta WAL e `:memory:` para testes, e `@types/node` 24 já traz os tipos. Zero dependência, zero passo de build. Limitação: sem extensões e sem API assíncrona — irrelevante para app de um processo.
+
+**Template impact:** app novo do Molde que precise de SQLite local (cache, fila, estado de agente) deve usar `node:sqlite`; Prisma continua para Postgres.
+
+## [2026-09-12] paratrade — infra: a API v1 do Coolify não cria persistent storages — volume é só pelo painel
+**Severity:** HIGH
+**Status:** `noted`
+
+`scripts/provision-coolify.mjs` cria app, envs, healthcheck e deploy pela API, mas não existe endpoint para *Storages* (volume mount). Sem volume, todo redeploy zera o que o container gravou em disco (no Paratrade: o SQLite com ledger, marco zero e saldo virtual). Solução: uma vez, no painel do app > Storages > Add > Volume Mount > destination `/app/data`. Anotar isso no `.brief/todo.md` do app como item do Gustavo, com 🔴, no dia do primeiro deploy — não deixar para descobrir na perda de dados.
+
+**Template impact:** `provision.ps1`/`provision.sh` deveriam imprimir esse passo manual ao final, ao lado do redirect URI do Google, para apps que gravem em disco.
+
+## [2026-09-12] paratrade — gotcha: faucet público da devnet Solana responde 429; Jupiter só roteia em mainnet
+**Severity:** LOW
+**Status:** `noted`
+
+`connection.requestAirdrop()` em `api.devnet.solana.com` devolveu 429 em todas as tentativas (12/09/2026). Caminho que funciona: financiar uma carteira de teste em `https://faucet.solana.com` (login GitHub) e passar a chave por env ao smoke. E a Jupiter não tem liquidez em devnet: o swap só é testável em mainnet — logo, o teste de swap de um app de trading é o modo paper com cotação real, e o teste de assinatura/envio/confirmação é o que a devnet cobre. A lite-api da Jupiter (`lite-api.jup.ag/swap/v1`) funciona sem chave; a Swap V2 (`api.jup.ag/swap/v2`) exige `x-api-key` gratuita de `developers.jup.ag`.
+
+**Template impact:** nenhum no template; vale para qualquer app Solana futuro.
+
+## [2026-09-12] paratrade — infra: Coolify API 4.3.19 cria volume persistente (`POST /applications/{uuid}/storages`) — a nota "a API não expõe storages" estava errada
+**Severity:** HIGH
+**Status:** `noted`
+
+O Paratrade perdia o SQLite a cada redeploy porque o app não tinha volume, e o todo dizia que só o painel resolvia. Medido em 12/09/2026 no Coolify 4.3.19: `GET /api/v1/applications/{uuid}/storages` devolve `{"persistent_storages":[],"file_storages":[]}` e `POST` no mesmo caminho com `{"type":"persistent","name":"<slug>-data","mount_path":"/app/data"}` devolve 201 e cria o volume (`type` é obrigatório; `"volume"` é rejeitado como inválido; `persistent` é o valor certo). Depois é preciso um `POST /api/v1/deploy?uuid=<uuid>&force=true` para o container montar. O nome final vira `<uuid>-<name>`.
+
+Duas pegadinhas na mesma sessão: (1) o Cloudflare Access na frente do `coolify.parolin.net` devolve **erro 1010 (browser_signature_banned)** para o `User-Agent` padrão do `urllib` do Python — mandar `User-Agent: node` (ou qualquer UA não vazio de cliente conhecido) resolve; o `fetch` do Node passa direto. (2) `provision.env` tem CRLF e valores com caracteres especiais: `source`/`eval` no bash quebram (um token virou "command not found") — ler o arquivo linha a linha em Node/Python em vez de `source`.
+
+**Template impact:** `scripts/provision.ps1` pode criar o volume `/app/data` (ou o que o app declarar em `.brief/stack.md`) via API no mesmo passo em que cria envs, eliminando o passo manual no painel; `scripts/coolify-env.mjs` poderia ganhar um `--storage <mount>`.
+
+
+## [2026-10-01] celula-deploy — infra: `phpinfo()` público entrega todas as env vars do Coolify — a chave do Resend foi copiada e usada para phishing
+**Severity:** CRITICAL
+**Status:** `noted`
+
+O Célula (PHP legado, não derivado do Molde) foi containerizado em 11/07/2026 com `COPY application/ /var/www/html/`, e a pasta levava um `php.php` (`<?php phpinfo() ?>`) herdado da hospedagem antiga. Em container, segredo é variável de ambiente, e o `phpinfo()` imprime a seção Environment inteira: `EMAIL_SMTP_PASSWORD` (chave do Resend), `DB_PASS`, `COOKIE_SECRET_KEY`. A página ficou 80 dias aberta sem login. Robôs que varrem `.env`, `phpinfo` e `/proc/self/environ` leram a página seis vezes em cinco dias (logs de 26/09 a 01/10), e em 30/09 a chave foi usada direto na API do Resend para ~200 e-mails de phishing bancário com DKIM válido do domínio. Na hospedagem compartilhada a mesma página era quase inofensiva, porque os segredos moravam em arquivo de configuração; o risco nasceu na migração.
+
+Três lições de operação: (1) a ordem do conserto importa — apagar a chave, tirar a página do ar, e só então criar a chave nova; criada antes, ela vaza pelo mesmo buraco; (2) o deploy do Coolify recria o container e apaga o log antigo: baixar antes com `GET /api/v1/applications/{uuid}/logs?lines=200000` (devolve as últimas 10.000 linhas), que funciona mesmo quando o SSH está bloqueado pela rede; (3) conferir o vazamento sem imprimir o segredo: `curl -s URL | grep -c '<prefixo da chave>'` e `grep -o` só dos nomes das variáveis.
+
+**Template impact:** o checklist de migração de app legado para o Stack Parolin ganha um passo antes do corte: `grep -rn "phpinfo\s*(" .`, mais arquivos `teste*`, `test*`, `info*`, `debug*` e listagens de diretório na raiz pública, e um `curl` em `/php.php`, `/info.php`, `/phpinfo.php`, `/.env` depois do deploy. Chave de serviço criada antes dessa varredura deve ser tratada como exposta. Para apps do Molde (Node), o equivalente é rota de debug que devolve `process.env`.
+
+## [2026-10-08] parolin — infra: o Bot Fight Mode do Cloudflare derruba o Best Practices do Lighthouse para 81 em todo site da zona
+**Severity:** HIGH
+**Status:** `noted`
+
+Lighthouse/PageSpeed em `parolin.net` dava Best Practices 81 com uma única auditoria reprovada, "Uses deprecated APIs" (peso 5). A origem não era o código do site: era `/cdn-cgi/challenge-platform/.../jsd/main.js`, o script de JavaScript Detections que o **Bot Fight Mode** injeta em toda resposta HTML da zona. Ele toca a Protected Audience API, que o Chrome marcou como obsoleta, e o Lighthouse conta a deprecação contra a página. Nenhuma mudança no repositório resolve; só desligar o Bot Fight Mode (ou só o toggle *JavaScript detections*, quando existir) em *Security → Settings → Bot traffic* da zona. Vale para qualquer app em `*.parolin.net` que passe pelo proxy laranja, incluindo os do Coolify. Dois achados menores da mesma medição: (1) a API pública do PageSpeed (`pagespeedonline.googleapis.com`) sem chave responde 429 com cota zero — o caminho que funciona é `npx lighthouse@latest <url> --output=json` com `CHROME_PATH` apontando para o Chrome em `%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe`; (2) medir `https://site/en` sem a barra final passa por um 301 do Cloudflare Pages para `/en/` que custa até 0,8 s na nota mobile — medir sempre a URL canônica, com barra.
+
+**Template impact:** no `.brief/todo.md` do Molde, o bloco de URLs da zona Cloudflare poderia já trazer o link de *Security → Settings* com a observação de que o Bot Fight Mode custa 19 pontos de Best Practices; e qualquer app que publique um site vitrine na stack deve nascer com Bot Fight Mode desligado ou com a decisão registrada.
+
+## [2026-10-08] parolin — pattern: PageSpeed/Lighthouse virou gate e skill global (`pagespeed-review`)
+**Severity:** LOW
+**Status:** `noted`
+
+O relatório do PageSpeed que o Gustavo mandou (parolin.net/en, 08/10/2026) virou duas coisas reutilizáveis, para não repetir o estudo a cada app: a skill global `C:\Users\gusta\.claude\skills\pagespeed-review\SKILL.md` (o que o PSI mede, limiares dos Core Web Vitals, pesos da nota, receita de medição local com `npx lighthouse@latest` e o script `scripts/lh_summary.py`, tabela dos Insights do Lighthouse 13 com a correção típica, metas por tipo de página e as armadilhas já pagas na stack) e um gate nos quality gates do `~/.claude/CLAUDE.md` e do `AGENTS.md` §4 deste template. Três pegadinhas de medição que custam tempo: a API pública do PSI sem chave responde 429 (cota zero), então a medição de trabalho é local; medir sempre a URL com barra final (o 308 do Cloudflare Pages custa 0,8 s na nota mobile); e um build local sem gzip (`vite preview`) sai pior do que a produção, então `npx serve dist` para site estático. Metas mobile (Performance / Accessibility / Best Practices / SEO): site público ≥ 90/100/100/100, login de app ≥ 85/100/100/100, tela interna ≥ 80/100/100 (decisão nível 2, Claude, 08/10/2026).
+
+**Template impact:** feito hoje: `AGENTS.md` §4 ganhou o bloco Lighthouse e o `.brief/todo.md` do template ganhou o link do PageSpeed com a nota do Bot Fight Mode (o "template impact" da entrada anterior). Não ligado: Lighthouse CI no `gates.yml` (receita na skill, §7); ligar por app quando houver página pública.
+
+## [2026-10-10] gerenciador-editais — pattern: varredura periódica da stack (Dependabot + CodeQL + auditoria semanal em issue)
+**Severity:** HIGH
+**Status:** `noted`
+
+Gustavo pediu (10/10/2026) que todo app da fábrica tenha um processo automático que procure vulnerabilidades e atualizações nos componentes, sem depender de alguém lembrar. No gerenciador-editais ficou assim: `.github/dependabot.yml` (npm, github-actions e docker, semanal na segunda 06:00 Brasília, agrupando minor/patch e security, ignorando major de Next/TypeScript/ESLint) e `.github/workflows/seguranca.yml` (cron semanal + manual + push em package.json/Dockerfile): `npm audit --omit=dev` falha o job só para alta/crítica em produção, `npm audit` completo e `npm outdated --long` entram num relatório que abre ou atualiza UMA issue fixa "Varredura semanal de dependências", e um job CodeQL `javascript-typescript` com `security-and-quality`. Gotcha: `npm audit` com dependências só de desenvolvimento quebradas sem correção (braces/fast-glob via eslint-config-next) ficaria vermelho para sempre; por isso a falha é só em produção e o resto é relatório.
+
+**Template impact:** copiar os dois arquivos para o Molde, com os nomes de framework ajustados; adicionar ao checklist de novo app "ligar Dependabot e CodeQL no repositório" (CodeQL em repo privado exige GitHub Advanced Security ou plano com Code Scanning; se não houver, manter só auditoria e Dependabot).
+
+## [2026-10-10] molde — infra: toda env criada pela API nasce como build-arg (`is_buildtime=true`) e vai parar nas camadas da imagem
+**Severity:** HIGH
+**Status:** `fixed-in-template`
+
+Gustavo viu no painel do cota4 (Coolify 4.4.6) que todas as envs, inclusive `AI_API_KEY`, `JWT_SECRET`, `DATABASE_URL` e as chaves do R2 e do Resend, estavam marcadas como Buildtime e Runtime. Causa: o `POST /api/v1/applications/{uuid}/envs` do `provision.ps1` mandava só `key`, `value`, `is_preview`, e o controller do Coolify (`ApplicationsController::create_env`) assume `is_buildtime ?? true` e `is_runtime ?? true`. Com o modo padrão "Standard build arguments", env de buildtime vira `--build-arg` do Docker, e build-arg fica gravado no histórico da imagem (`docker history` mostra o valor). A exposição é limitada porque a imagem não sai da VPS, mas é desnecessária: o backend do Molde não usa segredo nenhum no build (`prisma generate` lê só o schema; `migrate deploy` roda no start command). Levantamento pela API em 10/10/2026: os cinco apps nixpacks (coringao-orcamento, cota4, parafin, parafit-api, trajetorias2-api) estão assim; celula e paratrade (dockerfile) idem.
+
+Duas pegadinhas de API no caminho: (1) o campo chama-se `is_buildtime`/`is_runtime` (sem underscore no meio); `is_build_time`, nome das docs antigas, é ignorado em silêncio e o GET devolve `undefined`, o que fez um primeiro levantamento concluir "está tudo certo"; (2) a spec `openapi.yaml` do repositório nem lista esses dois campos no corpo do POST/PATCH, mas o controller aceita (`$allowedFields`). Fonte: `app/Http/Controllers/Api/ApplicationsController.php` no main de 10/10/2026.
+
+Sobre o "Secret manager" novo do painel (Doppler, Infisical, HashiCorp Vault via `{{vault.KEY}}`): não entra no Molde. O valor continua chegando ao container como env, o Coolify precisa de um token do cofre (que fica guardado no próprio Coolify), o 1Password da stack não é suportado, e o vazamento do Célula de 01/10 não seria evitado. Ganho real só em rotação e auditoria, pequeno para 7 apps e uma pessoa.
+
+**Template impact:** feito em `scripts/provision.ps1` (POST de envs agora manda `is_buildtime = ($k -like "NIXPACKS_*")` e `is_runtime` invertido). Apps já provisionados: trocar o dropdown "Build secrets" de "Standard build arguments" para "Docker BuildKit secrets" na página de envs de cada app (um clique por app; não há endpoint de env que a sessão do agente possa escrever — permissão de cofre negada), item `T6` do `.brief/todo.md`. Apps com `provision.ps1` copiado (cota4 tem a própria cópia com PATCH) precisam da mesma linha.
+
