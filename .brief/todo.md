@@ -104,13 +104,12 @@ O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manu
 
 ---
 
-## `T6` 🧑 Ligar "Docker BuildKit secrets" nos cinco apps do Coolify ⏳ — tira os segredos das camadas da imagem
+## `T6` 🧑 Clicar Deploy nos cinco apps do Coolify ⏳ — gera imagem nova sem os segredos nas camadas
 
-- Por quê, em uma linha: toda env criada pela API nasceu como build-arg e fica no `docker history` da imagem (field-notes 10/10/2026). O template já está corrigido; falta os apps existentes.
-- Em cada app: [Coolify](https://coolify.parolin.net) > Projects > production > *app* > Environment Variables > dropdown **Build secrets**: de `Standard build arguments` para `Docker BuildKit secrets`. Salva sozinho.
-- Apps: `coringao-orcamento`, `cota4`, `parafin`, `parafit-api`, `trajetorias2-api`. Opcional: `celula` e `paratrade` (dockerfile; só se o Dockerfile não usar `ARG` para essas envs).
-- Depois, botão **Deploy** em cada um para gerar imagem nova; conferir `/health` responde.
-- Alternativa por variável: ícone de engrenagem na linha > desmarcar **Buildtime** em tudo que não for `NIXPACKS_*`. Mais cliques, mesmo efeito.
+- O dropdown "Build secrets" já está em `Docker BuildKit secrets` nos cinco (feito pela API em 10/10/2026). Só o deploy ficou, porque o agente não tem permissão de deploy em produção.
+- Em cada app: [Coolify](https://coolify.parolin.net) > Projects > production > *app* > botão **Deploy** (canto superior direito). Esperar ficar `Running` verde.
+- Apps: `coringao-orcamento`, `cota4`, `parafin`, `parafit-api`, `trajetorias2-api`. Um `git push` no backend de cada um faz o mesmo.
+- Opcional: `celula` e `paratrade` (dockerfile) continuam no modo antigo; ligar só se o Dockerfile não usar `ARG` para essas envs.
 
 **Resposta:**
 
