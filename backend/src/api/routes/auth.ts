@@ -12,9 +12,9 @@ import { onAuthSuccess, onAuthFailure, onMockAuthUsed } from "../../observabilit
 
 const MockGooglePayload = z.object({
   googleSubjectId: z.string().min(3),
-  email: z.string().email(),
+  email: z.email(),
   displayName: z.string().optional(),
-  avatarUrl: z.string().url().optional(),
+  avatarUrl: z.url().optional(),
 });
 
 function frontendUrl(): string {

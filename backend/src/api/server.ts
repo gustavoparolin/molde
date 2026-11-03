@@ -32,6 +32,8 @@ await server.register(cors, {
     }
     callback(new Error("Not allowed by CORS"), false);
   },
+  // Lista explícita e obrigatória: desde o @fastify/cors 11 o padrão é só o
+  // CORS-safelisted (GET, HEAD, POST), e o preflight de PUT/PATCH/DELETE falharia.
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 });

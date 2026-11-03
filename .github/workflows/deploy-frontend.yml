@@ -40,7 +40,9 @@ jobs:
           else
             echo "configured=true" >> $GITHUB_OUTPUT
           fi
-      - uses: cloudflare/wrangler-action@v3
+      # v4 roda em Node 24 e instala o Wrangler 4 por padrão (o v3 instalava o 3.x);
+      # as entradas usadas aqui (apiToken, accountId, command) não mudaram.
+      - uses: cloudflare/wrangler-action@v4
         if: steps.secrets.outputs.configured == 'true'
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
