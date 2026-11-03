@@ -91,7 +91,7 @@ jobs:
       # testar. Ver field-note "testes verdes não provam nada se cobrem o guard".
       - name: Baixar o repo (o smoke roda a partir dele)
         if: steps.check.outputs.configured == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Aguardar a versão NOVA atender
         if: steps.check.outputs.configured == 'true'
