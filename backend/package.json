@@ -12,7 +12,7 @@
     "build": "echo 'No compile step: runtime TS execution via tsx'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest run",
+    "test": "vitest run --config ../vitest.config.ts",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev"
   },

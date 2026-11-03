@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests --config ../vitest.config.ts"
   },
   "dependencies": {
     "@mantine/charts": "^8.3.0",
