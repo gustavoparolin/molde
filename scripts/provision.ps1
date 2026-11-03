@@ -109,7 +109,8 @@ $databaseUrl = if ($dry) { "<connection-string-from-coolify>" } else { $pg.inter
 # "exited" until explicitly started, and the app deploy will fail with Prisma
 # P1001 ("Can't reach database server") if it races ahead of this. Start it
 # and wait for the container to actually report healthy before continuing.
-Call "Coolify Postgres start ($dbNameLabel)" "GET" "$coolUrl/api/v1/databases/$dbUuid/start" $coolHdr $null | Out-Null
+# Coolify 4.5: o start é POST (GET responde "This endpoint has changed to a POST request").
+Call "Coolify Postgres start ($dbNameLabel)" "POST" "$coolUrl/api/v1/databases/$dbUuid/start" $coolHdr $null | Out-Null
 if (-not $dry) {
   Write-Host "  waiting for Postgres to become healthy..." -ForegroundColor DarkGray
   $healthy = $false
@@ -234,9 +235,19 @@ if ($AllowedEmails) {
 # API (4.4.6, ApplicationsController create_env) defaults is_buildtime AND is_runtime to TRUE, which turns every secret into a docker --build-arg baked into the image
 # layers (readable with `docker history`). Runtime-only is what the backend needs: prisma generate
 # reads only the schema; migrate deploy runs in the start command (field-notes 2026-10-10).
+# Coolify 4.5: criar a Application já cria NIXPACKS_NODE_VERSION, e POST de chave existente
+# responde "already exists" (aborta o script). Lê as envs antes: existe -> PATCH, não existe -> POST.
+$envAtual = @{}
+if (-not $dry) {
+  foreach ($e in (@(Invoke-RestMethod -Method GET -Uri "$coolUrl/api/v1/applications/$appUuid/envs" -Headers $coolHdr) | Where-Object { -not $_.is_preview })) { $envAtual[$e.key] = $e.value }
+}
 foreach ($k in $envs.Keys) {
-  Call "Coolify env $k" "POST" "$coolUrl/api/v1/applications/$appUuid/envs" $coolHdr `
-    @{ key = $k; value = $envs[$k]; is_preview = $false; is_buildtime = ($k -like "NIXPACKS_*"); is_runtime = ($k -notlike "NIXPACKS_*") }
+  $corpo = @{ key = $k; value = $envs[$k]; is_preview = $false; is_buildtime = ($k -like "NIXPACKS_*"); is_runtime = ($k -notlike "NIXPACKS_*") }
+  if ($envAtual.ContainsKey($k)) {
+    Call "Coolify env $k (já existe, PATCH)" "PATCH" "$coolUrl/api/v1/applications/$appUuid/envs" $coolHdr $corpo | Out-Null
+  } else {
+    Call "Coolify env $k" "POST" "$coolUrl/api/v1/applications/$appUuid/envs" $coolHdr $corpo | Out-Null
+  }
 }
 
 # ── 7) App build config — port + Node 22 workaround for Prisma 7 ─────────────
