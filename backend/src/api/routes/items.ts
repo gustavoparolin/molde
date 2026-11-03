@@ -6,6 +6,12 @@ import * as items from "../../services/itemService.js";
 // Reference CRUD route for the `Item` slice. Every endpoint is behind requireAuth and
 // scoped to the authenticated user. Copy this shape (zod validation → service call →
 // status code) for your real entities.
+//
+// zod 4 idioms to copy: custom messages go in `error` (the v3 `message`,
+// `required_error`, `invalid_type_error` and `errorMap` are gone or deprecated); read
+// failures from `error.issues` (`.errors` no longer exists); prefer the top-level
+// formats (`z.email()`, `z.url()`, `z.uuid()`) over the deprecated `z.string().email()`.
+// Note that `z.uuid()` is strict RFC 4122 — test fixtures with fake ids need real UUIDs.
 
 const CreateItem = z.object({
   title: z.string().min(1).max(200),
@@ -18,7 +24,7 @@ const UpdateItem = z
     body: z.string().max(10_000).optional(),
   })
   .refine((v) => v.title !== undefined || v.body !== undefined, {
-    message: "Provide at least one field to update",
+    error: "Provide at least one field to update",
   });
 
 export async function registerItemRoutes(server: FastifyInstance): Promise<void> {
