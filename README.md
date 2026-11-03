@@ -3,7 +3,7 @@
 > Template + pipeline para criar apps full-stack no **Parolin Stack** "em minutos": da ideia
 > (com screenshots de inspiração) ao app no ar em `xyz.parolin.net`, com a IA fazendo o máximo.
 
-**Stack:** React 19 + Vite + **Mantine 8** (frontend) · Fastify 5 + Prisma 7 + PostgreSQL (backend) ·
+**Stack:** React 19 + Vite + **Mantine 9** (frontend) · Fastify 5 + Prisma 7 + PostgreSQL (backend) ·
 Google OAuth + JWT · Cloudflare Pages/DNS/R2 + Coolify (Oracle Always Free).
 
 ---

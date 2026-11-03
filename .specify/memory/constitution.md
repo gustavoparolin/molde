@@ -20,7 +20,7 @@ fields manually. Migrations run on Coolify at container startup.
 
 ## IV. Mantine is the Design System
 
-Use Mantine 8 components. No external CSS frameworks. Tokens live in
+Use Mantine 9 components. No external CSS frameworks. Tokens live in
 `frontend/src/theme.ts` (brand purple + `md` radius + Inter). If a feature
 needs a chart, Dropzone, or date picker, use `@mantine/charts`, `@mantine/dropzone`,
 `@mantine/dates` — they are already available in the skeleton.
