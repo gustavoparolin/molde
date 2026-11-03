@@ -105,7 +105,7 @@ specify self upgrade
   `.specify/integrations/claude.manifest.json` and `.specify/integrations/speckit.manifest.json`.
 - Molde's version uses **dashes** in skill names (`/speckit-specify`) while the official CLI uses
   **dots** (`/speckit.specify`). The underlying logic is the same.
-- Parolin Stack conventions (vertical slice, Mantine 8, `requireAuth`, Prisma 7, etc.) are baked
+- Parolin Stack conventions (vertical slice, Mantine 9, `requireAuth`, Prisma 7, etc.) are baked
   into Molde's skill files — the official CLI would need re-initialization to get these.
 
 **Update procedure for a Molde-derived app** (run between features, never mid-feature):
@@ -317,7 +317,7 @@ frontend:
 - `createdBy`/`updatedBy` are auto-filled by the Prisma audit extension — never set manually.
 - All DB access via `repositories/db.ts`.
 - Frontend state via Zustand stores only (no prop drilling, no raw fetch in components).
-- UI: Mantine 8. No external CSS frameworks. Tokens in `frontend/src/theme.ts`.
+- UI: Mantine 9. No external CSS frameworks. Tokens in `frontend/src/theme.ts`.
 
 ---
 

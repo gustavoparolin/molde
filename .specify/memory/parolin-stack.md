@@ -63,10 +63,10 @@ painel web** (e mesmo isso é minimizado pela skill `molde-deploy` + `provision.
 
 | Camada | Tecnologia | Versão de referência |
 |---|---|---|
-| Frontend | React + TypeScript + Vite | React 19, Vite 7 |
+| Frontend | React + TypeScript + Vite | React 19, Vite 8 |
 | Estado | Zustand | 5.x |
 | Roteamento | React Router DOM | 7.x |
-| UI | Mantine | 8.x |
+| UI | Mantine | 9.x |
 | Ícones | lucide-react | — |
 | Backend | Fastify + TypeScript via **tsx** (sem build step) | Fastify 5 |
 | ORM | Prisma | **7.x** |

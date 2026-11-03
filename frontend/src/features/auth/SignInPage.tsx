@@ -87,7 +87,7 @@ export function SignInPage() {
                 Dev: entrar sem OAuth
               </Anchor>
             </Center>
-            <Collapse in={devOpen}>
+            <Collapse expanded={devOpen}>
               <Stack gap="sm" mt="sm">
                 <TextInput
                   label="Nome"
