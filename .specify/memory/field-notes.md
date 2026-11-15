@@ -28,6 +28,96 @@ What happened, what the root cause was, and what the fix/pattern is.
 
 ---
 
+## [2026-11-15] painel-parolin — infra: tarefas agendadas do Claude Code (routines): `anthropic-version` obrigatório, sem idempotência, sessão em modo automático
+**Severity:** HIGH
+**Status:** `noted`
+
+Referência lida em 15/11/2026 (https://platform.claude.com/docs/en/api/claude-code/routines-fire). O `POST /v1/claude_code/routines/<trig_...>/fire` agora EXIGE o cabeçalho `anthropic-version` (ex.: `2026-10-21`); sem ele dá 400. O `anthropic-beta: experimental-cc-routine-2026-04-01` ficou opcional. Não há chave de idempotência: cada chamada repetida cria outra sessão, então quem chama deduplica no próprio banco. A resposta 200 traz `claude_code_session_id` e `claude_code_session_url`. Tarefa pausada responde 400, limite responde 429 com `Retry-After` e sobrecarga responde 503 (não 529). A sessão na nuvem começa em modo automático (o classificador aprova ou bloqueia ações) e, depois de bloqueios repetidos, para esperando aprovação dentro da sessão; quem dispara precisa de prazo de conclusão. O prompt salvo é a tarefa da sessão; o que vem de resultado de ferramenta é dado, então o procedimento mora no prompt salvo, não numa ferramenta MCP. Todos os conectores da conta entram por padrão; remover os desnecessários na criação.
+
+**Template impact:** se o Molde ganhar disparo de rotina, mandar `anthropic-version`, deduplicar no banco e guardar `claude_code_session_url`.
+
+---
+
+## [2026-11-15] painel-parolin — pattern: receita de conector do claude.ai (OAuth) num app atrás de Cloudflare Access (painel-parolin 1.1.0)
+**Severity:** HIGH
+**Status:** `noted`
+
+O issuer OAuth fica no host da API, sem Access, e serve `/.well-known/oauth-protected-resource` (também com sufixo `/mcp`), `/.well-known/oauth-authorization-server`, `/oauth/register` e `/oauth/token`. A tela de consentimento é rota do SPA (`authorization_endpoint = https://<app>/oauth/authorize`), protegida pelo Access, falando com `/api/oauth/*` pelo proxy da Pages Function existente; nenhuma Function nova. Anunciar a identidade publicada (`client_id_metadata_document_supported` + `none`) e também o registro automático (DCR). Callback confirmado em https://claude.com/docs/connectors/building/authentication.md: `https://claude.ai/api/mcp/auth_callback`. No 401 do `/mcp`, acrescentar `error="invalid_token"` ao `WWW-Authenticate` quando o token foi recusado. Código em `backend/src/services/oauthService.ts` e `backend/src/api/routes/oauth.ts`. Limites do claude.ai lidos na mesma doc: resultado de ferramenta ~150.000 caracteres, timeout de ferramenta 240 s, descoberta/registro/token 10 s, IP de saída 160.79.104.0/21.
+
+**Template impact:** receita para o README do Molde, junto da do MCP com Bearer fixo.
+
+---
+
+## [2026-11-15] painel-parolin — security: servidor OAuth próprio (rotação de refresh, reativação, CSRF, \_headers, limitador do DCR)
+**Severity:** HIGH
+**Status:** `noted`
+
+(1) Rotação de refresh sem janela de tolerância (~60 s, como o "reuse interval" do Auth0): dois refresh em paralelo ou nova tentativa depois de timeout parecem roubo e derrubam a família inteira. O claude.ai renova reativo (no 401) e proativo (5 min antes), então acontece. Quem perde a corrida no UPDATE condicional relê a linha antes de decidir entre rotação e revogação (painel-parolin PR #51). (2) Credencial com estado ativa/revogada e tokens filhos: reativar a credencial ressuscita os tokens não revogados. Reativar tem de revogar os filhos na mesma transação, e só a decisão humana reativa; endpoint público como `/oauth/token` nunca (`garantirCredencialOAuth`). (3) Fastify 5 tem parser de `text/plain` embutido: um formulário de outro site com `enctype=text/plain` (sem preflight) chega à rota como string em vez de levar 415. Anti-CSRF não pode contar com o 415: vem da validação zod do corpo, de um token que só o SPA conhece e do `Sec-Fetch-Site` (medido em `oauth.spec.ts`). (4) Cloudflare Pages: bloco do `_headers` restrito a `/oauth/*` não protege a mesma tela servida pelo React Router em `/OAuth/authorize` (o Router não diferencia maiúsculas por padrão e o `_redirects` serve o `index.html` em `/*`). Cabeçalho de segurança de SPA vai em `/*`, e a rota sensível leva `caseSensitive`. (5) Limitador de vazão de endpoint público (registro DCR) é consultado depois da validação; se contar antes, corpo inválido esgota a cota do servidor inteiro (`POST /oauth/register`).
+
+**Template impact:** checklist de segurança do Molde para quem implementar OAuth.
+
+---
+
+## [2026-11-15] painel-parolin — gotcha: no Fastify, auth no `preHandler` roda depois de o corpo ser lido e interpretado
+**Severity:** HIGH
+**Status:** `noted`
+
+Ordem: `onRequest` → `preParsing` → parse → `preValidation` → `preHandler`. Em rota com `bodyLimit` alto, cliente sem token faz o servidor bufferizar o corpo inteiro antes do 401. Auth que só lê cabeçalho vai no `onRequest`. Teste: `app.inject` mandando JSON inválido sem token tem de dar 401, não 400.
+
+**Template impact:** o `requireAuth`/`requireAgente` do Molde em rota com corpo grande deve ser `onRequest`.
+
+---
+
+## [2026-11-15] painel-parolin — gotcha: MCP no claude.ai — o modelo não lê recurso sozinho, e `details` de erro precisam ir no texto
+**Severity:** HIGH
+**Status:** `noted`
+
+O modelo não lê recurso MCP sozinho; o recurso só entra quando a pessoa o anexa pelo menu +. Instrução de servidor do tipo "leia o recurso X" precisa de ferramenta somente leitura com o mesmo texto (no painel: `inicio_memoria`). Os `details` de erro devem ir também no texto do `content`: cliente sem `outputSchema` só passa o `content` ao modelo.
+
+**Template impact:** o MCP do Molde deve espelhar cada recurso de instrução numa ferramenta somente leitura.
+
+---
+
+## [2026-11-15] painel-parolin — pattern: busca em português sem acento no Postgres (Prisma + tsvector gerado, plural, nomes de arquivo)
+**Severity:** HIGH
+**Status:** `noted`
+
+Prisma 7.10.1 com coluna gerada `tsvector` (`GENERATED ALWAYS AS ... STORED`): declarar só `Unsupported("tsvector")?` faz o `migrate diff` propor `ALTER COLUMN DROP DEFAULT`, que o Postgres recusa em coluna gerada; cada `migrate dev` futuro geraria migration quebrada. Com `Unsupported("tsvector")? @default(dbgenerated())` o diff fica vazio. Índice GIN com `@@index([campo(ops: raw("gin_trgm_ops"))], type: Gin)` e extensões/configurações de busca criadas à mão na migration não geram drift. Receita: `CREATE TEXT SEARCH CONFIGURATION public.pt_sem_acento (COPY = pg_catalog.portuguese); ALTER TEXT SEARCH CONFIGURATION public.pt_sem_acento ALTER MAPPING FOR hword, hword_part, word WITH public.unaccent, portuguese_stem;`. `to_tsvector('public.pt_sem_acento'::regconfig, texto)` é IMMUTABLE e cabe em coluna gerada sem wrapper. `unaccent` e `pg_trgm` são trusted e o dono do banco no Coolify os cria. Com 1.505 documentos (11,5 MB): consultas de 1 a 60 ms com `ts_headline`. Limites do radical: Snowball portuguese + unaccent não junta singular e plural em -ão/-ões, -ão/-ães, -em/-ens, -al/-ais, -el/-éis ("decisão"→"decisa", "decisões"→"deciso"). Nome de arquivo e domínio (`proxima-sessao.md`, `painel.parolin.net`) viram um lexema só (tipo file/host). Solução medida em `backend/src/memoria/busca.ts`: variantes por palavra viram alternativas do lexema, e um termo extra com `translate(conteudo_ou_caminho, '/\-_.', '     ')` entra com peso D.
+
+**Template impact:** se o Molde ganhar busca de texto, partir desta receita.
+
+---
+
+## [2026-11-15] painel-parolin — gotcha: Windows + Git Bash do Claude Code (barra invertida, CRLF, processo órfão, worktrees)
+**Severity:** HIGH
+**Status:** `noted`
+
+(1) A ferramenta Bash (Git Bash) altera barras invertidas em heredoc e em `python -c`/`node -e` (`C:\\Users` vira `C:Users`, `\\b` vira backspace); já deu SyntaxError e JSON inválido. Arquivo com barra invertida (regex, caminho Windows) se escreve com Write/Edit, ou num script gravado pelo Write, ou com `/` nos caminhos. (2) Com `core.autocrlf=true` os `.ts` estão com CRLF na working tree; edição por script (`node -e` com replace de trecho com `\n`) falha em silêncio. Uma entrada do CHANGELOG sumiu assim e outra foi parar no topo. Normalizar `\r\n` antes e lançar erro quando a âncora não for achada. (3) O TaskStop de um `npm run dev` (`node --watch`) ou `npm run dev:web` (vite) lançado em background mata só o npm; o node do servidor continua na porta e o próximo teste fala com o processo velho. Achar o PID (`Get-CimInstance Win32_Process`, CommandLine com `server.ts` ou `vite`) e usar `Stop-Process`. (4) Ao varrer `C:\Users\gusta\OneDrive\web`, pular worktrees do git (pasta cujo `.git` é arquivo, não diretório, como `painel-parolin-wt\*`): senão a varredura conta em dobro (198 contra 179 arquivos medidos).
+
+**Template impact:** AGENTS.md do Molde, seção Windows.
+
+---
+
+## [2026-11-15] painel-parolin — infra: script agendado no Windows (conhost headless, cópia empacotada, trava de arquivo, entrypoint testável)
+**Severity:** HIGH
+**Status:** `noted`
+
+(1) `conhost.exe --headless <programa>` roda tarefa do Agendador do Windows 11 sem piscar janela (`pwsh -WindowStyle Hidden` pisca). Mas o conhost devolve 0 mesmo quando o filho sai com 2, então o "Último resultado" do Agendador deixa de servir de alarme; o acompanhamento vai para o log ou para o `/health`. Vale para o export-para-vault também. (2) Script agendado não roda do working tree de desenvolvimento (depende da branch e do `node_modules`, que o `npm ci` quebra com EPERM no esbuild). Receita: empacotar com esbuild num `.mjs` só em `%LOCALAPPDATA%\<app>\`, escrita temporária + rename, recusa fora da main; a tarefa aponta para essa cópia (`backend/scripts/publicar-sync-memoria.mjs`). (3) Trava de arquivo com retomada da trava velha por `unlink` + criar `wx` não é atômica: com 4 execuções simultâneas, 3 passaram. Retomar renomeando a velha para nome único e conferindo o conteúdo antes de criar a nova (`backend/src/memoria/legion/trava.ts`). (4) Script que roda fora do servidor (cliente do Legion) fica testável se a lógica morar em `backend/src/<feature>/` só com `node:*` e `fetch`, e o entrypoint fino em `backend/scripts/`. Para conferir o tipo do entrypoint fora do tsconfig: `npx tsc --ignoreConfig --noEmit --module nodenext --moduleResolution nodenext --strict --skipLibCheck --types node scripts/x.ts` (o TypeScript 6 exige `--ignoreConfig` com tsconfig presente).
+
+**Template impact:** receita de "tarefa agendada no Windows" para o Molde, se algum app voltar a precisar.
+
+---
+
+## [2026-11-15] painel-parolin — gotcha: `claude remote-control` numa pasta nunca confiada fica pendurado na pergunta "Trust"
+**Severity:** LOW
+**Status:** `noted`
+
+`claude remote-control` (modo servidor) numa pasta que o CLI nunca confiou para na pergunta "Trust <dir>? [y/N]" e não sai sozinho; iniciado por outro processo, fica pendurado sem dar erro. Confiar a pasta uma vez abrindo `claude` interativo nela antes de automatizar. Confiar a pasta-mãe (ex.: `C:\Users\gusta\OneDrive\web`) vale para as filhas; `C:\Users\gusta\OneDrive\memoria-gus` não está debaixo dela.
+
+**Template impact:** nenhum no código; nota de DX.
+
+---
+
 ## [2026-11-15] painel-parolin — gotcha: o conector personalizado do claude.ai ACEITA header fixo, no segundo passo (corrige a entrada de 03/11)
 **Severity:** HIGH
 **Status:** `noted`
