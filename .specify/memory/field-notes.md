@@ -28,6 +28,36 @@ What happened, what the root cause was, and what the fix/pattern is.
 
 ---
 
+## [2026-11-15] parafin, molde, parafit (T7) — dx: o diff do `relock` não via pacote aninhado em workspace
+**Severity:** LOW
+**Status:** `fixed-in-template`
+
+O `scripts/relock.mjs` comparava só as chaves do lock que começam com `node_modules/`. Quando o lock antigo guardava um pacote dentro do workspace (`frontend/node_modules/@mantine/core`) e o novo o içava para a raiz, o diff dizia "entra" em vez de "9.7.4 -> 9.8.1". No Parafin, em 15/11/2026, o Mantine subiu de minor sem aparecer na lista de mudanças, e a contagem saiu 188 quando eram 198. Corrigido no Molde (gustavoparolin/molde#22): o filtro virou `includes("node_modules/")`.
+
+**Template impact:** feito. Quem copiou o `relock.mjs` para outro repositório deve copiar de novo.
+
+---
+
+## [2026-11-15] parafit (T7) — gotcha: E2E com `reuseExistingServer: true` em 3000/5173 testa o app de outra sessão
+**Severity:** HIGH
+**Status:** `noted`
+
+O `playwright.config.ts` do parafit sobe o backend em 3000 e o Vite em 5173 com `reuseExistingServer: true`. Em 15/11/2026, outra sessão do Claude estava com o Painel Parolin nessas duas portas, e o Playwright reaproveitou os servidores dele: a suíte "falhou" em 24 de 35 testes, com o snapshot mostrando a tela do Painel. Não era regressão nenhuma. Com o Gustavo trabalhando em várias sessões em paralelo, 3000/5173 quase sempre estão ocupadas por algum app do Molde. O Parafin já resolve isso com portas dedicadas (3901/5901, `reuseExistingServer: false`, env passado no `webServer`). No parafit, os specs ainda leem `process.env.VITE_API_BASE_URL ?? "http://localhost:3000"`, então quem rodar em outra porta precisa exportar `VITE_API_BASE_URL` também no processo do Playwright, não só no do Vite.
+
+**Template impact:** o `playwright.config.ts` do Molde deve nascer com portas dedicadas por app e `reuseExistingServer: false`, no padrão do Parafin. Antes de culpar uma subida por E2E vermelho, olhar o snapshot: se o título for de outro app, é colisão de porta.
+
+---
+
+## [2026-11-15] parafin (T7) — gotcha: o `sharp` decide o formato pelo conteúdo, não pelo MIME declarado
+**Severity:** HIGH
+**Status:** `noted`
+
+Conferir só o `mimetype` do multipart não impede um SVG de chegar ao `librsvg`, onde moram os CVEs do `sharp` (CVE-2026-96889, corrigido na 0.35.5): o `sharp` abre pelo que os bytes dizem. E a rota de extratos do Parafin aceitava qualquer `image/*`, inclusive `image/svg+xml`. A defesa é conferir a assinatura dos primeiros bytes antes de chamar o `sharp` (`formatoRaster` em `Parafin/backend/src/services/ocrService.ts`: JPEG, PNG, WebP, GIF, TIFF, HEIF/AVIF; SVG cru, com BOM ou comprimido é recusado). Validado com bytes gerados pelo próprio `sharp` nos seis formatos.
+
+**Template impact:** app do Molde que receber imagem de usuário e passar pelo `sharp` copia o `formatoRaster` e o chama antes do `sharp(buf)`.
+
+---
+
 ## [2026-11-15] painel-parolin — infra: tarefas agendadas do Claude Code (routines): `anthropic-version` obrigatório, sem idempotência, sessão em modo automático
 **Severity:** HIGH
 **Status:** `noted`
