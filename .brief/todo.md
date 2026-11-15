@@ -1,6 +1,6 @@
 # todo — passos a executar
 
-**Atualizado em:** 10/10/2026 (Claude) · **Próximo ID:** `T7` / `Q1`
+**Atualizado em:** 15/11/2026 (Claude) · **Próximo ID:** `T8` / `Q1`
 
 > **Protocolo:** fila única de passos pendentes — do Gustavo (🧑) e do agente (🤖). **Só tarefa acionável, só o que FALTA fazer**: contexto, histórico e o porquê das coisas moram no CHANGELOG, no código e no Brain, não aqui.
 > **ID estável.** Todo item nasce com um ID (`T1`, `T2`…) que **nunca é reciclado nem renumerado**, nem depois de resolvido e apagado: a posição no arquivo é a *ordem*, o ID é o *nome* — é o que permite citar o item num commit, num card ou numa conversa dois meses depois. Perguntas usam `Q1`, `Q2`… O próximo ID livre está na linha **Próximo ID** acima: ao criar item, use-o e incremente.
@@ -110,6 +110,15 @@ O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manu
 - Em cada app: [Coolify](https://coolify.parolin.net) > Projects > production > *app* > botão **Deploy** (canto superior direito). Esperar ficar `Running` verde.
 - Apps: `coringao-orcamento`, `cota4`, `parafin`, `parafit-api`, `trajetorias2-api`. Um `git push` no backend de cada um faz o mesmo.
 - Opcional: `celula` e `paratrade` (dockerfile) continuam no modo antigo; ligar só se o Dockerfile não usar `ARG` para essas envs.
+
+**Resposta:**
+
+---
+
+## `T7` 🤖 Zerar os 13 alertas do Dependabot no Parafin, no Molde e no parafit ⏳ 🔴 — um high no Parafin e um JWT expirado aceito nos três
+
+- Sessão nova do Claude Code na pasta `C:\Users\gusta\OneDrive\web\Parafin`, colar: `Leia C:\Users\gusta\OneDrive\web\molde\.brief\proxima-sessao-dependabot.md e execute.`
+- A tabela dos alertas, a ordem e as regras estão nesse arquivo. O push do Parafin redeploya o backend que a Gardenia usa: o agente avisa antes.
 
 **Resposta:**
 
