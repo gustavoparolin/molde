@@ -115,17 +115,6 @@ O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manu
 
 ---
 
-## `T7` 🧑 Mesclar o PR #18 do Parafin na hora em que a Gardenia não estiver conciliando ⏳ 🔴 — fecha o high do `sharp` e os outros 3 alertas
-
-- Molde e parafit já estão com zero alertas (PRs mesclados em 15/11). O Parafin espera só o merge, porque o merge redeploya o backend e o frontend.
-- Mesclar em [https://github.com/gustavoparolin/parafin/pull/18](https://github.com/gustavoparolin/parafin/pull/18) › **Merge pull request**.
-- Depois, no computador de dev, Git Bash em `C:\Users\gusta\OneDrive\web\Parafin`: `git pull && npm install && npx playwright install chromium`.
-- 🤖 depois do merge: conferir `gh api "repos/gustavoparolin/parafin/dependabot/alerts?state=open"` vazio, apagar `C:\Users\gusta\OneDrive\web\molde\.brief\proxima-sessao-dependabot.md` e tirar este item.
-
-**Resposta:**
-
----
-
 ## `T8` 🤖 Zerar os alertas do Dependabot no cota4 (18) e no coringao-orcamento (5) ⏳ 🔴 — high no `sharp` nos dois e 4 high do `undici` no cota4
 
 - Levantados em 15/11/2026 com o mesmo `gh api` do `T7`. cota4: `undici` (8, fix 8.12.2), `astro` (4, fix 7.4.7), `sharp`, `smol-toml`, `ip-address`, `glob` (dev), `fastify`, `fast-jwt`. coringao-orcamento: `sharp`, `fast-jwt`, `postcss-selector-parser`, `fastify`, `deepmerge` (sem correção).
