@@ -93,10 +93,14 @@ function nomeDoPacote(chave) {
 }
 
 // Uma linha por NOME de pacote, para o diff não virar ruído de caminho.
+// Conta também o que mora aninhado num workspace ("frontend/node_modules/@mantine/core"):
+// até 15/11/2026 o filtro era `startsWith("node_modules/")`, e no Parafin o Mantine
+// 9.7.4 -> 9.8.1 apareceu como "entra" em vez de mudança de versão, porque o lock antigo
+// o guardava dentro de `frontend/` e o novo o içou para a raiz.
 function versoesPorNome(lock) {
   const mapa = new Map();
   for (const [chave, dados] of Object.entries(lock.packages ?? {})) {
-    if (!chave.startsWith("node_modules/") || !dados.version) continue;
+    if (!chave.includes("node_modules/") || !dados.version) continue;
     const nome = nomeDoPacote(chave);
     if (!mapa.has(nome)) mapa.set(nome, new Set());
     mapa.get(nome).add(dados.version);
