@@ -2,6 +2,8 @@
 
 **Criado em:** 15/11/2026 (Claude, pedido do Gustavo) · **Item:** `T7` em `C:\Users\gusta\OneDrive\web\molde\.brief\todo.md` · Apagar este arquivo quando o `T7` fechar, depois que o resultado estiver nos CHANGELOGs.
 
+**Estado em 15/11/2026, fim da sessão:** executado. Molde e parafit com zero alertas (PRs mesclados); Parafin pronto no [PR #18](https://github.com/gustavoparolin/parafin/pull/18), esperando o merge do Gustavo (`T7`). O resultado está nos CHANGELOGs do Parafin e do parafit e nas field-notes de 15/11/2026. Este arquivo sai quando o `T7` fechar.
+
 ## Como abrir
 
 Claude Code, sessão nova, na pasta `C:\Users\gusta\OneDrive\web\Parafin`. Colar:

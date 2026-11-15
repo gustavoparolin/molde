@@ -1,6 +1,6 @@
 # todo — passos a executar
 
-**Atualizado em:** 15/11/2026 (Claude) · **Próximo ID:** `T8` / `Q1`
+**Atualizado em:** 15/11/2026 (Claude) · **Próximo ID:** `T9` / `Q1`
 
 > **Protocolo:** fila única de passos pendentes — do Gustavo (🧑) e do agente (🤖). **Só tarefa acionável, só o que FALTA fazer**: contexto, histórico e o porquê das coisas moram no CHANGELOG, no código e no Brain, não aqui.
 > **ID estável.** Todo item nasce com um ID (`T1`, `T2`…) que **nunca é reciclado nem renumerado**, nem depois de resolvido e apagado: a posição no arquivo é a *ordem*, o ID é o *nome* — é o que permite citar o item num commit, num card ou numa conversa dois meses depois. Perguntas usam `Q1`, `Q2`… O próximo ID livre está na linha **Próximo ID** acima: ao criar item, use-o e incremente.
@@ -115,10 +115,22 @@ O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manu
 
 ---
 
-## `T7` 🤖 Zerar os 13 alertas do Dependabot no Parafin, no Molde e no parafit ⏳ 🔴 — um high no Parafin e um JWT expirado aceito nos três
+## `T7` 🧑 Mesclar o PR #18 do Parafin na hora em que a Gardenia não estiver conciliando ⏳ 🔴 — fecha o high do `sharp` e os outros 3 alertas
 
-- Sessão nova do Claude Code na pasta `C:\Users\gusta\OneDrive\web\Parafin`, colar: `Leia C:\Users\gusta\OneDrive\web\molde\.brief\proxima-sessao-dependabot.md e execute.`
-- A tabela dos alertas, a ordem e as regras estão nesse arquivo. O push do Parafin redeploya o backend que a Gardenia usa: o agente avisa antes.
+- Molde e parafit já estão com zero alertas (PRs mesclados em 15/11). O Parafin espera só o merge, porque o merge redeploya o backend e o frontend.
+- Mesclar em [https://github.com/gustavoparolin/parafin/pull/18](https://github.com/gustavoparolin/parafin/pull/18) › **Merge pull request**.
+- Depois, no computador de dev, Git Bash em `C:\Users\gusta\OneDrive\web\Parafin`: `git pull && npm install && npx playwright install chromium`.
+- 🤖 depois do merge: conferir `gh api "repos/gustavoparolin/parafin/dependabot/alerts?state=open"` vazio, apagar `C:\Users\gusta\OneDrive\web\molde\.brief\proxima-sessao-dependabot.md` e tirar este item.
+
+**Resposta:**
+
+---
+
+## `T8` 🤖 Zerar os alertas do Dependabot no cota4 (18) e no coringao-orcamento (5) ⏳ 🔴 — high no `sharp` nos dois e 4 high do `undici` no cota4
+
+- Levantados em 15/11/2026 com o mesmo `gh api` do `T7`. cota4: `undici` (8, fix 8.12.2), `astro` (4, fix 7.4.7), `sharp`, `smol-toml`, `ip-address`, `glob` (dev), `fastify`, `fast-jwt`. coringao-orcamento: `sharp`, `fast-jwt`, `postcss-selector-parser`, `fastify`, `deepmerge` (sem correção).
+- Mesma receita do `T7`: `npm run relock`, `overrides` escopado onde o pai pina (o `minimatch` do `typescript-estree` vai aparecer depois do relock), `formatoRaster` antes do `sharp` se o app recebe imagem, `deepmerge` dispensado como no parafit#82. As pegadinhas estão nas field-notes de 15/11/2026.
+- O `gustavoparolin/trajetorias2` está arquivado no GitHub (sem Dependabot, último push em 25/07/2026). Se o `api-trajetorias2` ainda roda no Coolify, ninguém está vendo os alertas dele.
 
 **Resposta:**
 
