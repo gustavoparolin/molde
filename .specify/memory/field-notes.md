@@ -28,6 +28,24 @@ What happened, what the root cause was, and what the fix/pattern is.
 
 ---
 
+## [2026-11-15] painel-parolin — gotcha: o conector personalizado do claude.ai ACEITA header fixo, no segundo passo (corrige a entrada de 03/11)
+**Severity:** HIGH
+**Status:** `noted`
+
+Em claude.ai/customize/connectors › Adicionar › Adicionar conector personalizado, o primeiro passo mostra só Nome e URL; depois de "Continuar" vem o segundo, com Autenticação (Entrar agora / Fazer login quando necessário / Sem login), Cliente OAuth e "Cabeçalhos de requisição" (até quatro, valores guardados e nunca reexibidos). A entrada de 03/11 mais abaixo parou no primeiro passo e concluiu que o app do Claude exigia OAuth no `/mcp`. Para o MCP com Bearer fixo do Molde (`requireAgente`): **Sem login** + cabeçalho `Authorization` = `Bearer <token>`. O claude.ai marca "Entrar agora" como detectado porque o 401 traz `WWW-Authenticate` com `resource_metadata`; é preciso trocar à mão. A conexão sai da nuvem da Anthropic, não do aparelho, então o `/mcp` tem de ser público (fora do Cloudflare Access). Segundo achado: o Cloudflare da zona `parolin.net` devolveu 403 ao user-agent `Python-urllib` no `/mcp` com token válido, e 200 ao curl; teste de MCP por script usa curl ou User-Agent explícito, e se um cliente legítimo falhar, olhar os Security Events antes do código. Fonte: support.claude.com, artigo 11175166, e a tela conferida no Chrome em 15/11/2026. O teste no modo de voz do celular ainda não foi feito (tarefa 20261115-01 do painel).
+
+**Template impact:** README do Molde, seção do MCP: receita "ligar ao app do Claude" com Sem login + cabeçalho; o caminho OAuth só se o conector não servir.
+
+---
+
+## [2026-11-15] molde (+ Parafin, coringao-orcamento, parafit, painel-parolin) — gotcha: com um `CLAUDE.md` na pasta, o Claude Code NÃO carrega o `AGENTS.md`
+**Severity:** HIGH
+**Status:** `noted`
+
+A documentação atual (https://code.claude.com/docs/en/memory, seção "AGENTS.md", conferida em 15/11/2026) diz: "By default, Claude reads AGENTS.md only when you have no CLAUDE.md in your working directory or above it." O Molde tem `CLAUDE.md` de 4 linhas (só o bloco `<!-- SPECKIT START/END -->`, que manda ler o plano) e `AGENTS.md` de 409 linhas, e os derivados herdaram o padrão: Parafin (CLAUDE.md 23 l, AGENTS.md 358 l), coringao-orcamento (9 l, 357 l) e parafit (11 l, 318 l) não citam o `AGENTS.md`; o painel-parolin (33 l, 416 l) pede "Leia primeiro AGENTS.md" em prosa, o que depende de o agente decidir abrir o arquivo. No cota4 o `CLAUDE.md` (66 l) é o arquivo principal e o `AGENTS.md` tem 37 l, então lá o impacto é menor. Resultado: no Claude Code, o fluxo obrigatório, os quality gates, a seção de segurança e os "Recibos" do `AGENTS.md` não entram na sessão sozinhos. Copilot e Codex leem o `AGENTS.md` normalmente; o furo é só do Claude Code. Quando o Claude Code carrega o `AGENTS.md` por conta própria, a sessão interativa mostra a linha `no CLAUDE.md found; AGENTS.md loaded: ...`. **Padrão:** o `CLAUDE.md` traz a linha `@AGENTS.md` FORA do bloco SPECKIT (o hook `agent-context.update` reescreve só o que está entre os marcadores). Alternativa: a configuração **Project instructions** do `/config`, que pode mandar ler os dois. Custo: o import carrega o `AGENTS.md` inteiro em toda sessão, e a doc recomenda menos de 200 linhas por arquivo; o que vale só para um trecho do código pode ir para `.claude/rules/` com escopo por caminho, que só carrega quando o agente mexe naqueles arquivos.
+
+**Template impact:** acrescentar `@AGENTS.md` ao `CLAUDE.md` do Molde (e ao gerador do `personalize`, se ele regravar o arquivo); replicar nos derivados; depois avaliar emagrecer o `AGENTS.md` para perto de 200 linhas.
+
 ## [2026-11-03] painel-parolin — gotcha: `npm ci` no Windows com o Vite rodando apaga metade do `node_modules` e para no `esbuild.exe`
 **Severity:** LOW
 **Status:** `noted`
