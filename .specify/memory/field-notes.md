@@ -28,6 +28,16 @@ What happened, what the root cause was, and what the fix/pattern is.
 
 ---
 
+## [2026-11-18] ppm (GRV, stack#388) — pattern: login social que confirma conta nova pelo `email_verified` precisa que o "esqueci a senha" desligue as identidades
+**Severity:** HIGH
+**Status:** `noted`
+
+No PPM, a conta nova pelo Google, Microsoft ou Yahoo passou a nascer com o e-mail provado e a identidade ligada sempre que o provedor garante o endereço (`email_verified`; Microsoft só conta pessoal, `tid` fixo), mesmo fora do domínio dele (Yahoo com `@gmail.com`). A revisão de segurança achou o furo: a redefinição de senha pelo link provava o e-mail, mas não apagava `USUARIO_IDENTIDADE`. Se um provedor deixasse alguém declarar um endereço alheio, o ocupante continuaria entrando pelo botão depois de a dona redefinir a senha, e a mitigação "o dono recupera pelo esqueci a senha" era falsa. Correção: a redefinição concluída pelo link (token com a marca do e-mail) apaga as identidades da conta ANTES de trocar a senha; o dono religa no próximo login. Separar no código duas perguntas: o provedor **garante** o endereço (basta para conta nova) e o provedor **manda no domínio** (exigido para ligar conta antiga na hora; senão, link por e-mail).
+
+**Template impact:** app do Molde que ganhar login social deve nascer com `garante` × `autoridade` separados e com o desligamento das identidades na redefinição de senha, com teste.
+
+---
+
 ## [2026-11-15] parafin, molde, parafit (T7) — dx: o diff do `relock` não via pacote aninhado em workspace
 **Severity:** LOW
 **Status:** `fixed-in-template`
