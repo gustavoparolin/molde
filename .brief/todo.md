@@ -1,6 +1,6 @@
 # todo — passos a executar
 
-**Atualizado em:** 21/11/2026 (Claude) · **Próximo ID:** `T10` / `Q1`
+**Atualizado em:** 21/11/2026 (Claude) · **Próximo ID:** `T11` / `Q3`
 
 > **Protocolo:** fila única de passos pendentes — do Gustavo (🧑) e do agente (🤖). **Só tarefa acionável, só o que FALTA fazer**: contexto, histórico e o porquê das coisas moram no CHANGELOG, no código e no Brain, não aqui.
 > **ID estável.** Todo item nasce com um ID (`T1`, `T2`…) que **nunca é reciclado nem renumerado**, nem depois de resolvido e apagado: a posição no arquivo é a *ordem*, o ID é o *nome* — é o que permite citar o item num commit, num card ou numa conversa dois meses depois. Perguntas usam `Q1`, `Q2`… O próximo ID livre está na linha **Próximo ID** acima: ao criar item, use-o e incremente.
@@ -133,13 +133,24 @@ O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manu
 
 ---
 
+## `T10` 🧑 Fechar o PR #7 obsoleto e apagar a branch dele ⏳
+
+- Git Bash: `gh pr close 7 -R gustavoparolin/molde -d -c "Obsoleto: o lock já tem fast-jwt 6.3.7 (#26)."` — o PR é o [#7](https://github.com/gustavoparolin/molde/pull/7)
+
+**Resposta:**
+
+---
+
 ## Perguntas que só humano responde
 
 **Como responder:** uma linha, aqui ou no chat — `Q1a Q2b` — ou só **`ok`** para aceitar todas as recomendadas (✅). Justificar é opcional (`Q2b, mas em setembro` funciona). Se a resposta vier de outra pessoa, diga de quem.
 
 **O que o agente faz com ela:** (1) marca `[x]` e anota `→ resposta (dd/mm)`; (2) grava a decisão datada no CHANGELOG, com quem decidiu; (3) reescreve o item `T` que dependia dela para virar tarefa executável e executa a parte que for dele; (4) apaga a pergunta respondida. Pergunta sem resposta fica `[ ]` e **bloqueia** o item — o agente não inventa default nem age pela recomendação sozinho.
 
-_(nenhuma pergunta aberta)_
+- [ ] `Q1` (varredura de 21/11/2026 · você) **Quem mescla os PRs semanais do Dependabot?** O merge na main publica sozinho nos apps do Molde. **(a)** patch e correção de segurança mesclam sozinhos quando os gates passam; minor espera a varredura mensal; major sempre com você ✅ · **(b)** patch e minor mesclam sozinhos quando os gates passam · **(c)** nada sozinho: o agente mescla os verdes quando você disser "processar varredura" →
+- [ ] `Q2` (varredura de 21/11/2026 · você) **A varredura de segurança e atualização roda todo mês sozinha?** **(a)** tarefa agendada no Legion, dia 1 de cada mês, em modo inventário (somente leitura, modelo barato), que grava o relatório no vault e cria uma tarefa no Painel; exige uma lista de comandos de leitura liberados para o modo sem prompt e depende de o Legion estar ligado ✅ · **(b)** sem agendamento: você dispara `/varredura-seguranca-atualizacao` quando quiser →
+
+**O que destrava na hora:** `Q1a` ou `Q1b` → o agente escreve o workflow de auto-merge no Molde e replica nos filhos; `Q1c` → nada muda · `Q2a` → o agente cria a tarefa agendada e a lista de comandos liberados; `Q2b` → nada muda. Contexto: `C:\Users\gusta\OneDrive\memoria-gus\Brain\Projects\Molde\Log\2026-11-21.md`.
 
 ---
 

@@ -1801,3 +1801,67 @@ TypeScript: o 7.0 já é `latest` no npm, mas o `typescript-eslint` 8.72.1 (e a 
 As rotas de admin `filtrarUsuarios` e `getUsuarioPorId` do PPM devolviam `U.*` e, com isso, o hash bcrypt da senha de cada usuário; o CPF era coletado no cadastro sem nenhum uso (LGPD, art. 6º, III: finalidade e necessidade). A correção foi uma função central `src/config/semSegredos.js` que remove segredos por nome, aplicada num ponto só, e a decisão de parar de pedir, gravar e devolver o documento (CPFs guardados zerados em 19/11/2026). Padrão para o próximo app: (1) nunca devolver a linha inteira do usuário em resposta de API; (2) uma função central que remove segredos por nome, com teste que usa a lista real de colunas da tabela, para que coluna nova sensível quebre o teste; (3) antes de pedir CPF ou qualquer documento, escrever para que ele serve; sem finalidade, não coletar.
 
 **Template impact:** adicionar ao Molde um `semSegredos` (ou equivalente) com teste baseado nas colunas reais, e uma linha na checklist de cadastro: "para que serve cada campo pessoal?".
+
+## [2026-11-21] varredura (Molde e seis filhos) — gotcha: override aninhado de transitiva pinada deixa `npm ls` em "invalid"
+**Severity:** LOW
+**Status:** `noted`
+
+Depois de um override escopado como `"@prisma/config": { "effect": "^3.22.1" }`, o `npm ls effect` marca `invalid` e sai com ELSPROBLEMS (o mesmo vale para qualquer pacote forçado contra pin exato, como mysql2 e minimatch), porque o npm não reescreve a aresta no lock. É inofensivo: instala a versão nova, o `npm ci` do CI passa e o `prisma validate/generate` roda. O gate é o `npm audit`, não o código de saída do `npm ls`. Em app com Coolify de `base_directory=/backend`, o override da raiz não chega à produção (a instalação não vê o lock da raiz): repetir o override no `backend/package.json`.
+
+**Template impact:** documentar no `scripts/relock.mjs` e no README do relock; não tratar `npm ls` vermelho como gate.
+
+## [2026-11-21] varredura (Molde e seis filhos) — pattern: smoke que exige 404 no login mock, e conferir no host da API
+**Severity:** LOW
+**Status:** `noted`
+
+O smoke do Molde passou a exigir 404 em `POST /auth/google/mock`. Um filho que copiar o smoke sem fechar o mock (`ALLOW_MOCK_AUTH` / `NODE_ENV`) fica com o deploy vermelho, e o certo é corrigir o gate, não a checagem. Na conferência manual, testar no host da **API**: o host do frontend (Pages) responde 200 a qualquer caminho por causa do fallback do SPA e dá falso resultado.
+
+**Template impact:** nenhuma além do smoke já mesclado; lembrar no README dos filhos.
+
+## [2026-11-21] varredura (Molde e seis filhos) — gotcha: `.brief/` ignorado pelo git faz o todo não viajar em PR
+**Severity:** LOW
+**Status:** `noted`
+
+Em cota4, parafit, painel, coringao-orcamento e celula-deploy o `.brief/` inteiro está no `.gitignore`: um item de todo nunca entra em PR nem em commit, só existe no disco local. Antes de prometer "o todo vai no mesmo PR", rodar `git check-ignore -v .brief/todo.md`; o PR deve avisar que o item foi gravado só localmente.
+
+**Template impact:** decidir se o `.gitignore` do Molde deve continuar ignorando `.brief/` (o todo do próprio Molde é rastreado).
+
+## [2026-11-21] varredura (Molde e seis filhos) — gotcha: Dependabot, jobs "queued" e `ignore` de major
+**Severity:** LOW
+**Status:** `noted`
+
+(1) Logo depois de mesclar um `dependabot.yml` novo, os runs "Dependabot Updates" ficam `queued`, e os anteriores (security updates) terminavam `cancelled` após 24 h; hipótese: o runner dinâmico não pega o job do repo privado. Conferir no dia seguinte, não na hora. (2) O `ignore` de semver-major no `dependabot.yml` vale também para as security updates: correção que só sai em major não vira PR automático e precisa de issue ou relock manual. (3) Reusable workflow (`gates.yml`) com `permissions: contents: read` funciona sob caller também `read`; nenhum passo dos deploys precisa de escrita. (4) Existe o ecossistema `docker-compose` do Dependabot, que cobre tags flutuantes de compose.
+
+**Template impact:** comentar o ponto 2 no `dependabot.yml` do Molde.
+
+## [2026-11-21] varredura (Molde e seis filhos) — gotcha: testes e build que sujam o working tree ou falham a frio
+**Severity:** LOW
+**Status:** `noted`
+
+(1) E2E com `webServer` a frio: na 1ª rodada os workers chamaram o login mock antes de o backend responder e todos caíram no fixture (`existingPlans undefined`); com o backend de pé, 35/35. Subir o backend antes ou esperar o `/health`. (2) React 19.3 faz o Vite registrar no console do E2E o aviso "Encountered a script tag while rendering React component" (provavelmente o `ColorSchemeScript` do Mantine); os testes passam. (3) `npm install` em repo só com `yarn.lock` reescreve o `yarn.lock`: reverter só aquele arquivo. (4) O `npm run build` do tema do grv regrava `tailwind.css` só com a data do banner: restaurar antes de commitar.
+
+**Template impact:** nenhuma.
+
+## [2026-11-21] varredura (Molde e seis filhos) — gotcha: `git worktree add` com caminho relativo e scratchpad compartilhado entre agentes
+**Severity:** LOW
+**Status:** `noted`
+
+Com `git -C <repo> worktree add`, um caminho relativo resolve contra o repo, não contra o cwd: usar caminho absoluto, senão o worktree nasce dentro do clone. Em repo privado da GRV com issues desligadas, o PR usa `Refs` para a issue do `stack`, não `Fixes`. Conferência de cabeçalhos de app atrás do Cloudflare Access: usar o domínio `*.pages.dev`, porque o domínio próprio responde 302 para o login do Access. O preview do Cloudflare Pages trunca o nome da branch em cerca de 23 caracteres no slug (`<slug>.<projeto>.pages.dev`); a URL exata vem do check-run do commit.
+
+**Template impact:** nenhuma.
+
+## [2026-11-21] celula-deploy — gotcha: Apache da imagem `php:*-apache` e `expose_php`
+**Severity:** LOW
+**Status:** `noted`
+
+A imagem `php:*-apache` (Debian) já traz `conf-enabled/security.conf` com `ServerTokens OS` e `ServerSignature On`; uma conf própria chamada `security-*.conf` carrega antes (ordem alfabética, `-` vem antes de `.`) e perde. Usar prefixo `zz-` e `a2enconf`. E `expose_php = Off` apaga a única prova externa da versão do PHP (o `X-Powered-By`): aplicar só depois de conferir a versão nova no ar, em dois deploys.
+
+**Template impact:** nenhuma (vale para qualquer app PHP em Docker).
+
+## [2026-11-21] infra-grv — gotcha: Cloudflare Managed Transform, túnel gerenciado remotamente e pasta do Coolify proxy
+**Severity:** LOW
+**Status:** `noted`
+
+(1) O Managed Transform `add_security_headers` do Cloudflare sobrescreve o `Referrer-Policy` da origem e põe `same-origin`: no bsbdiscoclub trocou o `strict-origin-when-cross-origin` do nginx e os links de saída deixaram de mandar Referer. Conferir antes de ligar em site com links de saída. (2) O túnel `cloudflared` do Stack GRV é gerenciado remotamente (`--token-file`): o ingress não fica em `/etc/cloudflared/config.yml`; ler pela API, `GET /accounts/<id>/cfd_tunnel/<tid>/configurations`. (3) Na vm-grv, `/data/coolify/proxy` tem modo 700 e é de 9999/root: `cd` falha mesmo com sudo no comando seguinte; usar `sudo docker compose -f /data/coolify/proxy/docker-compose.yml --project-directory /data/coolify/proxy up -d`.
+
+**Template impact:** nenhuma.
