@@ -12,6 +12,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Só leitura do repo: nenhum passo escreve no GitHub. Explícito para que a cópia
+# num filho com permissão padrão "write" não herde escrita.
+permissions:
+  contents: read
+
 jobs:
   # Nada sobe sem os gates verdes no MESMO SHA (inspection 2026-08-15, F-06).
   gates:
@@ -24,8 +29,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
-      - run: npm install
+          # A mesma major dos gates; npm ci para buildar exatamente o lock testado.
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - run: npm run build --workspace frontend
         env:
           VITE_API_BASE_URL: https://${{ github.event.repository.name }}-api.parolin.net

@@ -1,0 +1,37 @@
+# Atualização de versão semanal (os alertas de segurança são outra chave, em
+# Settings > Code security > Dependabot security updates).
+# Minor e patch chegam num PR agrupado por ecossistema; major fica de fora
+# (passa pela leitura humana e por `npm run relock`, ver AGENTS.md "Dependency alerts").
+# Transitiva pinada por um pacote (ex.: effect dentro de @prisma/config) o
+# Dependabot não resolve: continua sendo `overrides` + `npm run relock`.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    groups:
+      minor-e-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    groups:
+      minor-e-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    open-pull-requests-limit: 5
