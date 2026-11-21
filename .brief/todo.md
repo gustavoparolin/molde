@@ -1,6 +1,6 @@
 # todo — passos a executar
 
-**Atualizado em:** 15/11/2026 (Claude) · **Próximo ID:** `T9` / `Q1`
+**Atualizado em:** 21/11/2026 (Claude) · **Próximo ID:** `T10` / `Q1`
 
 > **Protocolo:** fila única de passos pendentes — do Gustavo (🧑) e do agente (🤖). **Só tarefa acionável, só o que FALTA fazer**: contexto, histórico e o porquê das coisas moram no CHANGELOG, no código e no Brain, não aqui.
 > **ID estável.** Todo item nasce com um ID (`T1`, `T2`…) que **nunca é reciclado nem renumerado**, nem depois de resolvido e apagado: a posição no arquivo é a *ordem*, o ID é o *nome* — é o que permite citar o item num commit, num card ou numa conversa dois meses depois. Perguntas usam `Q1`, `Q2`… O próximo ID livre está na linha **Próximo ID** acima: ao criar item, use-o e incremente.
@@ -120,6 +120,14 @@ O `qwen3.8:27b-mlx` leu 4/4 campos de uma imagem sintética em 3,7 s, mas **manu
 - Levantados em 15/11/2026 com o mesmo `gh api` do `T7`. cota4: `undici` (8, fix 8.12.2), `astro` (4, fix 7.4.7), `sharp`, `smol-toml`, `ip-address`, `glob` (dev), `fastify`, `fast-jwt`. coringao-orcamento: `sharp`, `fast-jwt`, `postcss-selector-parser`, `fastify`, `deepmerge` (sem correção).
 - Mesma receita do `T7`: `npm run relock`, `overrides` escopado onde o pai pina (o `minimatch` do `typescript-estree` vai aparecer depois do relock), `formatoRaster` antes do `sharp` se o app recebe imagem, `deepmerge` dispensado como no parafit#82. As pegadinhas estão nas field-notes de 15/11/2026.
 - O `gustavoparolin/trajetorias2` está arquivado no GitHub (sem Dependabot, último push em 25/07/2026). Se o `api-trajetorias2` ainda roda no Coolify, ninguém está vendo os alertas dele.
+
+**Resposta:**
+
+---
+
+## `T9` 🧑 Ler o relatório da manutenção de 21/11/2026 e decidir o que fica para leitura humana ⏳
+
+- Relatório privado: `C:\Users\gusta\OneDrive\memoria-gus\Brain\Projects\Molde\Log\2026-11-21.md`
 
 **Resposta:**
 

@@ -69,6 +69,18 @@ await checar("Rota inexistente devolve 404 (não 500)", async () => {
   return "404";
 });
 
+await checar("Login mock NÃO existe em produção (404)", async () => {
+  // A rota de desenvolvimento não pode estar registrada no ar (field-note
+  // 2026-11-03: foi este tipo de checagem que pegou o mock aberto no Coringão).
+  const res = await fetch(`${API}/auth/google/mock`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  assertar(res.status === 404, `esperado 404, veio ${res.status}`);
+  return "404";
+});
+
 // ── ESCREVA AQUI o caminho principal do SEU app ──────────────────────────────
 //
 // Exemplo do formato (do cota4, que exercita criar → reler → editar → PDF):
